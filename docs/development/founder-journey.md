@@ -1,6 +1,6 @@
 # Founder journey: implementation and verification
 
-Scope: [GitHub #2](https://github.com/iamthatbenj/item_indexer/issues/2), PRD stories 1, 3, 5, 69. Hosted activation is #3; invitations are #4. This is the first application slice, not the full archive product.
+Scope: [GitHub #2](https://github.com/iamthatbenj/item_indexer/issues/2), PRD stories 1, 3, 5, 69. Hosted activation is #3; [invitations and member sign-in](family-invitations.md) are #4. This describes the first application slice and its shared security behavior, not the full archive product.
 
 ## Boundaries
 
@@ -14,6 +14,8 @@ Scope: [GitHub #2](https://github.com/iamthatbenj/item_indexer/issues/2), PRD st
 ## Email identity and one-time codes
 
 Email normalization trims whitespace and lowercases; it does not rewrite provider aliases or remove dots. Approval uses the same normalization. This pilot uses email control, not knowledge of family facts, as identity proof.
+
+Sign-in eligibility now includes approved founders, current collection members, and identities with unaccepted/unexpired invitations; eligibility is checked both when requesting and redeeming a code. This does not grant collection access before invitation acceptance. Only approved founders may create collections.
 
 Codes are cryptographically random six-digit values, valid for **10 minutes**, with at most **five incorrect guesses per challenge**. A resend replaces the previous challenge. Successful redemption consumes the challenge in the same write transaction that creates a session, including competing redemption requests. A failed database operation rolls back the transaction.
 
@@ -32,7 +34,7 @@ SMTP is configurable using host/port/user/password/from variables. Port 465 uses
 - Trusted-device sign-in: persistent cookie with **30-day absolute expiry**, also enforced server-side. Activity does not extend that bound.
 - Cookies are HttpOnly, SameSite=Lax, path `/`; production additionally uses Secure and the `__Host-` cookie prefix. Always use HTTPS in production.
 - Sign-out deletes the current database session and clears its cookie. Replaying that old cookie fails. Other signed-in devices are not signed out by this action.
-- Revoking founder approval removes outstanding challenges and prevents further founder sign-ins/collection creation, but existing sessions may still access their existing collection memberships. Revoking membership/all-device access is later work, not an undocumented side effect of founder revocation.
+- Revoking founder approval removes outstanding challenges and prevents further collection creation. It removes founder-only sign-in eligibility, but current members or actively invited identities may still sign in. Existing sessions may still access their collection memberships. Revoking membership/all-device access is later work, not an undocumented side effect of founder revocation.
 - The same operator credentials that approve founders can invalidate sessions directly if necessary. Treat database access as privileged. Expired sessions and challenges are opportunistically pruned; no backup/retention promise is added by this slice.
 
 ## Initial abuse protection
@@ -44,7 +46,7 @@ Counters live in the database, not process memory, and are updated atomically ac
 | Request a code | 3 | 30 |
 | Verify a code | 10 | 300 |
 
-The five-guess challenge limit also applies. A resend does not reset the per-email verification window. Email scopes are keyed digests; the service does not trust arbitrary forwarded IP headers for identity. Old windows are pruned.
+The five-guess challenge limit also applies. A resend does not reset the per-email verification window. Email scopes are keyed digests; the service does not trust arbitrary forwarded IP headers for identity. Old windows are pruned. [Invitations](family-invitations.md) add separately namespaced send limits; combined traffic is not bounded by these sign-in limits alone.
 
 These deliberately conservative pilot limits can temporarily deny legitimate requests during abuse and permit bursts at a fixed-window boundary. They are not comprehensive DDoS prevention or a spending cap. Broader usage controls/observability belong to #33–#34. Operator review is needed before changing limits for production usage.
 
@@ -54,7 +56,7 @@ These deliberately conservative pilot limits can temporarily deny legitimate req
 
 `migrations/` defines the shipped tables. The migration runner records a checksum and applies each new migration atomically. It does not create unused future invitation/photo/transfer tables. Collection membership is separate from an account and from founder approval. Future people/storytellers are not equated with account records.
 
-`src/server/auth.ts` owns code/session behavior; `collections.ts` owns scoped collection queries/creation; `mail.ts` owns delivery. No live-provider credentials are required to test their combined behavior through route handlers and the browser.
+`src/server/auth.ts` owns code/session behavior; `security.ts` shares eligibility, HMAC digests, and rate counters; `collections.ts` owns scoped collection queries/creation; `invitations.ts` owns scoped invitation/join behavior; `mail.ts` owns delivery. No live-provider credentials are required to test their combined behavior through route handlers and the browser.
 
 ## Test evidence
 

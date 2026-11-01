@@ -2,10 +2,19 @@ import "server-only";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import nodemailer from "nodemailer";
+import { appOrigin } from "./http";
 
 export async function deliverCode(email: string, code: string, deliveryId: string): Promise<void> {
-  const subject = "Your Family Belongings sign-in code";
-  const text = `Your sign-in code is ${code}. It expires in 10 minutes and can be used once. If you did not request it, ignore this message.`;
+  return deliverMessage(email, "Your Family Belongings sign-in code", `Your sign-in code is ${code}. It expires in 10 minutes and can be used once. If you did not request it, ignore this message.`, deliveryId);
+}
+
+export async function deliverInvitation(email: string, collectionName: string, invitationId: string): Promise<void> {
+  const link = new URL(`/invitations/${invitationId}`, appOrigin()).toString();
+  const text = `You are invited to join the family collection “${collectionName}”.\n\nOpen ${link}\n\nSign in as ${email} and review the joining terms before accepting. This invitation expires in seven days. A forwarded link does not grant access. If you were not expecting this invitation, ignore it.`;
+  return deliverMessage(email, "Your family collection invitation", text, invitationId);
+}
+
+async function deliverMessage(email: string, subject: string, text: string, deliveryId: string): Promise<void> {
   if (process.env.MAIL_TRANSPORT === "file") {
     if (process.env.NODE_ENV === "production" || !process.env.TURSO_DATABASE_URL?.startsWith("file:")) {
       throw new Error("File email delivery is restricted to local development databases.");

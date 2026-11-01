@@ -1,36 +1,17 @@
 import "server-only";
-import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import type { Transaction } from "@libsql/client";
 import { database, writeTransaction } from "./database";
 import { deliverCode } from "./mail";
 import { sessionCookie } from "./session-cookie";
+import { allow, canSignIn, digest } from "./security";
 
 export { sessionCookie } from "./session-cookie";
 
 const MINUTE = 60_000;
-const WINDOW = 15 * MINUTE;
-
-function digest(value: string): string {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret || secret.length < 32 || secret.startsWith("replace-this")) throw new Error("Set a random AUTH_SECRET of at least 32 characters.");
-  return createHmac("sha256", secret).update(value).digest("hex");
-}
 
 function sessionDigest(token: string): string {
   return createHash("sha256").update(token).digest("hex");
-}
-
-async function allow(tx: Transaction, scope: string, limit: number, now: number): Promise<boolean> {
-  const key = digest(`rate:${scope}`);
-  const start = Math.floor(now / WINDOW) * WINDOW;
-  await tx.execute({ sql: "DELETE FROM rate_limits WHERE window_start < ?", args: [start - WINDOW] });
-  const result = await tx.execute({
-    sql: `INSERT INTO rate_limits (key, window_start, count) VALUES (?, ?, 1)
-          ON CONFLICT(key, window_start) DO UPDATE SET count = count + 1 RETURNING count`,
-    args: [key, start],
-  });
-  return Number(result.rows[0].count) <= limit;
 }
 
 export async function requestCode(email: string): Promise<void> {
@@ -40,8 +21,7 @@ export async function requestCode(email: string): Promise<void> {
   const issued = await writeTransaction(async tx => {
     if (!await allow(tx, "request:global", 30, now)) return false;
     if (!await allow(tx, `request:${email}`, 3, now)) return false;
-    const approved = await tx.execute({ sql: "SELECT email FROM approved_founders WHERE email = ?", args: [email] });
-    if (!approved.rows.length) return false;
+    if (!await canSignIn(tx, email, now)) return false;
     await tx.execute({ sql: "DELETE FROM email_challenges WHERE expires_at <= ?", args: [now] });
     await tx.execute({
       sql: `INSERT INTO email_challenges (id, email, digest, created_at, expires_at, attempts) VALUES (?, ?, ?, ?, ?, 0)
@@ -67,9 +47,9 @@ export async function redeemCode(email: string, code: string, trusted: boolean):
   return writeTransaction(async tx => {
     if (!await allow(tx, "verify:global", 300, now)) return null;
     if (!await allow(tx, `verify:${email}`, 10, now)) return null;
-    const result = await tx.execute({
-      sql: `SELECT c.* FROM email_challenges c JOIN approved_founders f ON f.email=c.email WHERE c.email = ?`, args: [email],
-    });
+    // Eligibility can expire or be removed between request and redemption.
+    if (!await canSignIn(tx, email, now)) return null;
+    const result = await tx.execute({ sql: "SELECT * FROM email_challenges WHERE email=?", args: [email] });
     const challenge = result.rows[0];
     if (!challenge || Number(challenge.expires_at) <= now || Number(challenge.attempts) >= 5) return null;
     await tx.execute({ sql: "UPDATE email_challenges SET attempts = attempts + 1 WHERE id = ?", args: [challenge.id] });

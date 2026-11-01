@@ -15,7 +15,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<R
     <div className="panels">
       <section className="card" aria-labelledby="request-heading">
         <h2 id="request-heading">Get a sign-in code</h2>
-        <p>Use your approved email address. There is no public signup.</p>
+        <p>Use your invited or approved email address. There is no public signup. After signing in, you can review your invitations from Your collections.</p>
         <form action="/auth/request" method="post">
           <label htmlFor="request-email">Email address</label>
           <input id="request-email" name="email" type="email" autoComplete="email" maxLength={254} required defaultValue={email} />
