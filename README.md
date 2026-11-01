@@ -2,7 +2,7 @@
 
 A private family record of belongings and their stories. Next.js/TypeScript, Turso-compatible libSQL, and (in later slices) private Cloudflare R2 storage.
 
-Implemented so far: [ticket #2](https://github.com/iamthatbenj/item_indexer/issues/2), approved founder sign-in and private collection creation. Invitations, photos, exports, and production activation are not implemented yet. Product scope: [`docs/prd.md`](docs/prd.md).
+Implemented so far: [ticket #2](https://github.com/iamthatbenj/item_indexer/issues/2), approved founder sign-in and private collection creation, now deployed through [ticket #3](https://github.com/iamthatbenj/item_indexer/issues/3). Invitations, photos, and exports are not implemented yet. Product scope: [`docs/prd.md`](docs/prd.md).
 
 ## Local setup
 
@@ -50,6 +50,6 @@ The browser/integration suite covers the founder journey, actual durable records
 
 ## Production boundary
 
-[Ticket #3](https://github.com/iamthatbenj/item_indexer/issues/3) covers live Vercel/Turso deployment, existing-domain setup, real email delivery, and operator confirmation. Configure `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`, a random `AUTH_SECRET`, an exact HTTPS `APP_ORIGIN`, and the SMTP variables documented in `.env.example`. File email delivery is rejected in production or with remote databases. Production SMTP requires encrypted transport and does not enable debug logging.
+The founder pilot is hosted at **https://belongings.josefson.net** on Vercel with Turso and Resend SMTP. See the [hosted operator runbook](docs/development/hosted-founder-journey.md) for DNS, environment separation, explicit migrations/approval, deployment/rollback, acceptance evidence, and current baseline costs. Configure `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`, a random `AUTH_SECRET`, an exact HTTPS `APP_ORIGIN`, and the SMTP variables documented in `.env.example`. File email delivery is rejected in production or with remote databases. Production SMTP requires encrypted transport and does not enable debug logging.
 
 No R2 buckets or credentials are needed for this slice. Do not treat a successful build or the local test results as proof of live email delivery, provider pricing, or the full below-$10/month budget.

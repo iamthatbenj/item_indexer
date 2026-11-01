@@ -73,4 +73,4 @@ Covered cases include:
 - Failed email delivery, atomic rollback when membership assignment fails, and migration reruns preserving content.
 - A narrow mobile browser viewport without horizontal overflow.
 
-Still required in #3: real Turso connection, SMTP provider, domain/TLS, secure production cookie, deployed smoke test, and baseline pricing. Physical phone/assistive-technology review and final pilot cost/acceptance are later manual work. Automated local success is not a production security audit.
+[Hosted activation/runbook for #3](hosted-founder-journey.md) records the real Turso connection, Resend SMTP delivery, domain/TLS, deployed acceptance checks, remaining operator confirmations, and baseline pricing. Physical phone/assistive-technology review and final pilot cost/acceptance are later manual work. Automated local success is not a production security audit.
