@@ -1,6 +1,6 @@
 # Family invitations and collection switching
 
-Scope: [ticket #4](https://github.com/iamthatbenj/item_indexer/issues/4). Administrator promotion/removal and invitation cancellation UI are not part of this slice; membership management is #5. No item, photo, export, public sharing, or person/storyteller functionality is introduced.
+Scope: [ticket #4](https://github.com/iamthatbenj/item_indexer/issues/4). Administrator promotion/removal is documented in [#5 membership management](family-membership.md). Invitation cancellation UI is not implemented. No item, photo, export, public sharing, or person/storyteller functionality is introduced.
 
 ## Behavior and privacy
 
@@ -33,7 +33,7 @@ node --env-file=.local/production-database.env --import tsx scripts/database.ts 
 
 Then deploy the #4 revision, keeping the production-only secrets and exact production origin. No new environment variables or provider resources are required. Do not let a Git push auto-deploy #4 before its migration is ready. Rolling the application back to the founder-only revision leaves the new table in place; do not drop it or erase memberships. That old code will not support invited/member-only sign-in, so prefer a compatible fix-forward where possible.
 
-For emergency access changes, founder approval is not membership revocation: removing founder approval alone does not prevent a current member or actively invited identity from requesting a sign-in code. Existing sessions still need separate invalidation when required. #5 will provide the membership/access-management interface.
+For emergency access changes, founder approval is not membership revocation: removing founder approval alone does not prevent a current member or actively invited identity from requesting a sign-in code. Existing sessions still need separate invalidation for an account-wide sign-out when required. [#5 membership management](family-membership.md) removes access to one collection without disrupting other memberships; it also invalidates any still-pending invitation for that removed member in that collection.
 
 ## Verification
 

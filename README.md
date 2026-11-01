@@ -2,7 +2,7 @@
 
 A private family record of belongings and their stories. Next.js/TypeScript, Turso-compatible libSQL, and (in later slices) private Cloudflare R2 storage.
 
-Implemented so far: [#2](https://github.com/iamthatbenj/item_indexer/issues/2), approved founder sign-in and private collection creation, deployed through [#3](https://github.com/iamthatbenj/item_indexer/issues/3); plus [#4](https://github.com/iamthatbenj/item_indexer/issues/4), email-bound family invitations, member sign-in, and collection switching. See the [invitation behavior and migration/deployment ordering](docs/development/family-invitations.md) before shipping #4. Photos and exports are not implemented yet. Product scope: [`docs/prd.md`](docs/prd.md).
+Implemented so far: [#2](https://github.com/iamthatbenj/item_indexer/issues/2), approved founder sign-in and private collection creation, deployed through [#3](https://github.com/iamthatbenj/item_indexer/issues/3); plus [#4](https://github.com/iamthatbenj/item_indexer/issues/4), email-bound family invitations, member sign-in, and collection switching. [#5](https://github.com/iamthatbenj/item_indexer/issues/5) adds [administrator and membership management](docs/development/family-membership.md), including safe final-administrator protection and collection-scoped access removal. See the [invitation migration/deployment ordering](docs/development/family-invitations.md) before shipping #4; #5 needs no additional migration. Photos and exports are not implemented yet. Product scope: [`docs/prd.md`](docs/prd.md).
 
 ## Local setup
 
@@ -20,7 +20,7 @@ npm run dev
 
 Open **http://localhost:3000** (the exact `APP_ORIGIN` configured in `.env.local`). Request a code for the approved email. Development messages are private local JSON files under `.local/outbox/`; open the matching message to retrieve the code. They are not exposed through a web endpoint or printed in server logs. Delete the outbox when no longer needed: it contains usable sign-in codes and email addresses.
 
-Then sign in, create a collection, and return to it. Administrators can invite relatives by email; an invited relative signs in, reviews the joining terms from **Your invitations**, and accepts before accessing the collection. Members can switch among their own collections. Use **Sign out** on shared devices. Public signup is unavailable; only approved founders can create collections.
+Then sign in, create a collection, and return to it. Administrators can invite relatives by email; an invited relative signs in, reviews the joining terms from **Your invitations**, and accepts before accessing the collection. Members can switch among their own collections. Administrators follow **Manage family members and administrators** to promote/demote members or remove access without erasing contributions. At least one administrator must remain. Use **Sign out** on shared devices. Public signup is unavailable; only approved founders can create collections.
 
 ### Operator commands
 
@@ -32,7 +32,7 @@ npm run founder:revoke -- relative@example.com
 
 These commands require direct database credentials (or local file access); there is no public founder-approval endpoint. Restrict credentials to the operator and the server environment. Migration files are versioned/checksummed; rerunning is safe, but editing an already-applied migration is rejected. Add new migrations instead. Migrations are an explicit deployment step, not performed during an ordinary web request or build.
 
-Revoking **founder approval** prevents creation of further collections and removes founder-only sign-in eligibility. Current members and identities with active invitations can still sign in. It does **not** remove existing collection membership or terminate existing sessions. Membership/access management is ticket #5. See [`docs/development/founder-journey.md`](docs/development/founder-journey.md) for session and security behavior.
+Revoking **founder approval** prevents creation of further collections and removes founder-only sign-in eligibility. Current members and identities with active invitations can still sign in. It does **not** remove existing collection membership or terminate existing sessions. Use the collection's administrator-only membership-management page to remove collection access. This preserves attribution and does not sign the account out of other collections. See [`docs/development/founder-journey.md`](docs/development/founder-journey.md) for session and security behavior.
 
 ## Verification
 
@@ -46,7 +46,7 @@ npm audit --omit=dev
 
 Playwright starts its own server on `127.0.0.1:3100`, with a new isolated file database and captured email. Each run **replaces `.local/e2e/` only**; never put real records there. Tests do not use `.env.local` database credentials or deliver actual email. Linux hosts may need Playwright browser system dependencies; follow the installer output for the host OS.
 
-The browser/integration suite covers the founder and invitation journeys, durable records, collection isolation and switching, email-bound acceptance, code/invitation expiry/reuse/concurrency, throttling, session expiration/revocation, CSRF boundaries, failure rollback, migration upgrades/reruns, and mobile-width usability. This is not real-device or hosted-service acceptance.
+The browser/integration suite covers the founder and invitation journeys, durable records, collection isolation and switching, email-bound acceptance, code/invitation expiry/reuse/concurrency, throttling, session expiration/revocation, administrator changes and concurrent final-administrator protection, preservation after access removal, CSRF boundaries, failure rollback, migration upgrades/reruns, and mobile-width usability. This is not real-device or hosted-service acceptance.
 
 ## Production boundary
 

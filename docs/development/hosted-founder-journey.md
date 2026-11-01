@@ -55,7 +55,7 @@ node --env-file=.local/production-database.env --import tsx scripts/database.ts 
 
 Replace the example email with the intended approved founder. The script does not automatically use `FOUNDER_EMAIL`. Never edit an applied migration: checksums reject that; add a new migration instead. Before future schema changes, assess compatibility with both the new deployment and rollback target, and take a recoverable backup using the agreed operational procedure once implemented.
 
-Revoking founder approval does **not** terminate existing sessions or remove memberships. With [#4 invitations/member sign-in](family-invitations.md), current members and actively invited identities remain eligible to sign in without founder approval. For emergency all-device sign-out, use privileged database access to invalidate the affected account's sessions; rotate compromised provider tokens separately. Rotating `AUTH_SECRET` invalidates pending codes but not existing sessions. Do not mistake any of these actions for the later membership-management feature.
+Revoking founder approval does **not** terminate existing sessions or remove memberships. With [#4 invitations/member sign-in](family-invitations.md), current members and actively invited identities remain eligible to sign in without founder approval. For emergency all-device sign-out, use privileged database access to invalidate the affected account's sessions; rotate compromised provider tokens separately. Rotating `AUTH_SECRET` invalidates pending codes but not existing sessions. [Membership management (#5)](family-membership.md) removes only the selected collection's access without deleting contributions or disrupting memberships elsewhere. It does not perform account-wide sign-out.
 
 ## Deployment and rollback
 

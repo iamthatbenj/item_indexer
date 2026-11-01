@@ -34,7 +34,7 @@ SMTP is configurable using host/port/user/password/from variables. Port 465 uses
 - Trusted-device sign-in: persistent cookie with **30-day absolute expiry**, also enforced server-side. Activity does not extend that bound.
 - Cookies are HttpOnly, SameSite=Lax, path `/`; production additionally uses Secure and the `__Host-` cookie prefix. Always use HTTPS in production.
 - Sign-out deletes the current database session and clears its cookie. Replaying that old cookie fails. Other signed-in devices are not signed out by this action.
-- Revoking founder approval removes outstanding challenges and prevents further collection creation. It removes founder-only sign-in eligibility, but current members or actively invited identities may still sign in. Existing sessions may still access their collection memberships. Revoking membership/all-device access is later work, not an undocumented side effect of founder revocation.
+- Revoking founder approval removes outstanding challenges and prevents further collection creation. It removes founder-only sign-in eligibility, but current members or actively invited identities may still sign in. Existing sessions may still access their collection memberships. [Membership management](family-membership.md) revokes access to one collection without terminating sessions or affecting other memberships. All-device sign-out remains a separate privileged operation, not an undocumented side effect of founder revocation.
 - The same operator credentials that approve founders can invalidate sessions directly if necessary. Treat database access as privileged. Expired sessions and challenges are opportunistically pruned; no backup/retention promise is added by this slice.
 
 ## Initial abuse protection
@@ -56,7 +56,7 @@ These deliberately conservative pilot limits can temporarily deny legitimate req
 
 `migrations/` defines the shipped tables. The migration runner records a checksum and applies each new migration atomically. It does not create unused future invitation/photo/transfer tables. Collection membership is separate from an account and from founder approval. Future people/storytellers are not equated with account records.
 
-`src/server/auth.ts` owns code/session behavior; `security.ts` shares eligibility, HMAC digests, and rate counters; `collections.ts` owns scoped collection queries/creation; `invitations.ts` owns scoped invitation/join behavior; `mail.ts` owns delivery. No live-provider credentials are required to test their combined behavior through route handlers and the browser.
+`src/server/auth.ts` owns code/session behavior; `security.ts` shares eligibility, HMAC digests, and rate counters; `collections.ts` owns scoped collection queries/creation; `invitations.ts` owns scoped invitation/join behavior; `memberships.ts` owns administrator changes and collection-scoped removal; `mail.ts` owns delivery. No live-provider credentials are required to test their combined behavior through route handlers and the browser.
 
 ## Test evidence
 

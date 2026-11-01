@@ -4,7 +4,7 @@ import { currentAccount } from "@/server/auth";
 import { listCollections } from "@/server/collections";
 import { listInvitations } from "@/server/invitations";
 
-export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+export default async function Home({ searchParams }: { searchParams: Promise<{ error?: string; membership?: string }> }) {
   const account = await currentAccount();
   if (!account) redirect("/sign-in");
   const collections = await listCollections(account.id);
@@ -14,6 +14,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
     <div className="account"><p>Signed in as <strong>{account.email}</strong></p><form action="/auth/sign-out" method="post"><button className="secondary">Sign out</button></form></div>
     <p className="eyebrow">Your family record</p><h1>Family collections</h1>
     <p className="intro">Each collection is private to its own family members.</p>
+    {query.membership === "removed" && <p role="status" className="notice">You no longer have access to that family collection. Your contributions remain attributed; membership in other collections is unchanged.</p>}
     {invitations.length > 0 && <section className="card" aria-labelledby="invitations-heading">
       <h2 id="invitations-heading">Your invitations</h2>
       <ul className="collection-list">{invitations.map(invitation => <li key={invitation.id}><Link href={`/invitations/${invitation.id}`}>Review invitation to {invitation.name}</Link></li>)}</ul>

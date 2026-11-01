@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { currentAccount } from "@/server/auth";
 import { getCollection, listCollections } from "@/server/collections";
 
-export default async function Collection({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ invite?: string }> }) {
+export default async function Collection({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ invite?: string; membership?: string }> }) {
   const account = await currentAccount();
   if (!account) redirect("/sign-in");
   const { id } = await params;
@@ -23,6 +23,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
     <p className="eyebrow">Private family collection</p>
     <h1>{collection.name}</h1>
     <p className="intro">A place for the belongings, memories, and people that matter to your family.</p>
+    {query.membership === "demoted" && <p role="status" className="notice">You are now a family member. Another administrator manages invitations and access; your editing rights are unchanged.</p>}
     <section className="card">
       <h2>Your collection is ready</h2>
       <p>You are a family {collection.role}. Only this collection’s members can see its record.</p>
@@ -35,6 +36,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
     </nav>
     {collection.role === "administrator" && <section className="card" aria-labelledby="invite-heading">
       <h2 id="invite-heading">Invite a family member</h2>
+      <p><Link href={`/collections/${id}/members`}>Manage family members and administrators</Link></p>
       <p>Invitations expire after seven days. Sending again replaces the previous link. Only the invited email can accept; a forwarded link does not grant access.</p>
       {query.invite && Object.hasOwn(messages, query.invite) && <p role={query.invite === "sent" || query.invite === "member" ? "status" : "alert"} className="notice">{messages[query.invite]}</p>}
       <form action={`/collections/${id}/invitations`} method="post">
