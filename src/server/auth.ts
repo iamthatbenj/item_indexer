@@ -4,10 +4,12 @@ import { cookies } from "next/headers";
 import type { Transaction } from "@libsql/client";
 import { database, writeTransaction } from "./database";
 import { deliverCode } from "./mail";
+import { sessionCookie } from "./session-cookie";
+
+export { sessionCookie } from "./session-cookie";
 
 const MINUTE = 60_000;
 const WINDOW = 15 * MINUTE;
-export const sessionCookie = () => process.env.NODE_ENV === "production" ? "__Host-family_session" : "family_session";
 
 function digest(value: string): string {
   const secret = process.env.AUTH_SECRET;

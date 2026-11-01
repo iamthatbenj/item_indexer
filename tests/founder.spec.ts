@@ -3,6 +3,8 @@ import { createClient } from "@libsql/client";
 import { execFileSync } from "node:child_process";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { NextResponse } from "next/server";
+import { expiredSessionCookie } from "../src/server/session-cookie";
 
 const origin = "http://127.0.0.1:3100";
 const dbUrl = `file:${resolve(".local/e2e/test.db")}`;
@@ -171,12 +173,32 @@ test("sign-out revokes the server session, including a copied old cookie", async
   const stolenState = await page.context().storageState();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("status")).toContainText("signed out");
+  expect((await page.context().cookies()).some(cookie => cookie.name === "family_session")).toBe(false);
   expect((await db.execute("SELECT * FROM sessions")).rows).toHaveLength(0);
   const stale = await browser.newContext({ storageState: stolenState });
   const stalePage = await stale.newPage();
   await stalePage.goto("/");
   await expect(stalePage).toHaveURL(/\/sign-in$/);
   await stale.close();
+});
+
+test("production sign-out expiry removes the prefixed cookie in an HTTPS browser", async ({ page }) => {
+  const url = "https://session-cookie.test/signed-out";
+  await page.context().addCookies([{
+    name: "__Host-family_session", value: "previous-session", url,
+    httpOnly: true, secure: true, sameSite: "Lax",
+  }]);
+  expect((await page.context().cookies(url)).some(cookie => cookie.name === "__Host-family_session")).toBe(true);
+
+  // Exercise the application's expiry policy through Next's real serializer;
+  // Chromium enforces the __Host- prefix on the resulting HTTPS response.
+  const response = new NextResponse("Signed out");
+  response.cookies.set(expiredSessionCookie(true));
+  await page.route(url, route => route.fulfill({
+    status: 200, headers: { "set-cookie": response.headers.get("set-cookie")! }, body: "Signed out",
+  }));
+  await page.goto(url);
+  expect((await page.context().cookies(url)).some(cookie => cookie.name === "__Host-family_session")).toBe(false);
 });
 
 test("untrusted sessions use a browser-session cookie and expire on the server", async ({ page }) => {
