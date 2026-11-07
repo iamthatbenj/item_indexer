@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentAccount } from "@/server/auth";
 import { getCollection, listCollections } from "@/server/collections";
-import { listPhotoDrafts } from "@/server/photo-drafts";
+import { listItems } from "@/server/items";
 import PhotoCapture from "./photo-capture";
 
 export default async function Collection({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ invite?: string; membership?: string }> }) {
@@ -12,7 +12,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
   const collection = await getCollection(account.id, id);
   if (!collection) notFound();
   const collections = await listCollections(account.id);
-  const drafts = await listPhotoDrafts(account.id, id);
+  const items = await listItems(account.id, id);
   const query = await searchParams;
   const messages: Record<string, string> = {
     sent: "Invitation sent. It expires in seven days. The recipient must sign in with the invited email.",
@@ -35,10 +35,10 @@ export default async function Collection({ params, searchParams }: { params: Pro
     <PhotoCapture collectionId={id} />
     <section className="card" aria-labelledby="belongings-heading">
       <h2 id="belongings-heading">Belongings</h2>
-      {drafts.length === 0 ? <p>No saved belongings yet. Start with one photo.</p> : <ul className="draft-grid">{drafts.map(draft => <li key={draft.id}>
-        <Link href={`/collections/${id}/items/${draft.id}`}>
-          <img src={`/collections/${id}/items/${draft.id}/photo?size=thumbnail`} alt="Photo of an untitled belonging" loading="lazy" width={240} height={240} />
-          <span>Untitled belonging — Draft item</span>
+      {items.length === 0 ? <p>No saved belongings yet. Start with one photo.</p> : <ul className="draft-grid">{items.map(item => <li key={item.id}>
+        <Link href={`/collections/${id}/items/${item.id}`}>
+          <img src={`/collections/${id}/items/${item.id}/photo?size=thumbnail`} alt={`Photo of ${item.name || "an untitled belonging"}`} loading="lazy" width={240} height={240} />
+          <span>{item.name || "Untitled belonging"} — {item.status === "complete" ? "Complete item" : "Draft item"}</span>
         </Link>
       </li>)}</ul>}
     </section>

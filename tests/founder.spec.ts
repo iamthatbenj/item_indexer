@@ -50,7 +50,7 @@ async function login(page: Page, email: string, trusted = true) {
 }
 
 test.beforeEach(async () => {
-  await db.batch(["item_photos", "items", "photo_uploads", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["item_revisions", "item_photos", "items", "photo_uploads", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { force: true, recursive: true });
 });
 test.afterAll(() => db.close());
@@ -304,7 +304,7 @@ test("migrations can be rerun without losing existing collections", async ({ pag
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
   await page.reload();
   await expect(page.getByRole("heading", { name: "Preserved through migration" })).toBeVisible();
-  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(3);
+  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(4);
 });
 
 test("mobile sign-in and collection creation remain usable without horizontal overflow", async ({ page }) => {

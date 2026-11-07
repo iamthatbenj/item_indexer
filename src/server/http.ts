@@ -15,7 +15,7 @@ export function go(path: string): Response {
 }
 
 // Native forms, no cross-origin write API, and bounded parsing before any auth/DB work.
-export async function formPost(request: Request, work: (form: URLSearchParams) => Promise<Response>): Promise<Response> {
+export async function formPost(request: Request, work: (form: URLSearchParams) => Promise<Response>, maxBytes = 4096): Promise<Response> {
   try {
     if (request.headers.get("origin") !== appOrigin()) return new Response("Forbidden", { status: 403 });
     if (request.headers.get("content-type")?.split(";")[0] !== "application/x-www-form-urlencoded") {
@@ -29,7 +29,7 @@ export async function formPost(request: Request, work: (form: URLSearchParams) =
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 4096) {
+      if (size > maxBytes) {
         await reader.cancel();
         return new Response("Form is too large", { status: 413 });
       }

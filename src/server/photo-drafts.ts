@@ -95,21 +95,6 @@ async function cleanup(key: string) {
   catch { console.error("Photo object cleanup failed. Operator reconciliation may be needed."); }
 }
 
-export async function listPhotoDrafts(accountId: string, collectionId: string) {
-  const result = await database().execute({
-    sql: `SELECT i.id FROM items i JOIN item_photos p ON p.item_id=i.id JOIN memberships m ON m.collection_id=i.collection_id
-          WHERE i.collection_id=? AND m.account_id=? ORDER BY i.created_at DESC, i.id`, args: [collectionId, accountId],
-  });
-  return result.rows.map(row => ({ id: String(row.id) }));
-}
-export async function getPhotoDraft(accountId: string, collectionId: string, id: string) {
-  const result = await database().execute({
-    sql: `SELECT i.id, p.width, p.height FROM items i JOIN item_photos p ON p.item_id=i.id
-          JOIN memberships m ON m.collection_id=i.collection_id WHERE i.id=? AND i.collection_id=? AND m.account_id=?`, args: [id, collectionId, accountId],
-  });
-  const row = result.rows[0];
-  return row ? { id: String(row.id), width: Number(row.width), height: Number(row.height) } : null;
-}
 export async function photoDownload(accountId: string, collectionId: string, id: string, thumbnail: boolean) {
   const result = await database().execute({
     sql: `SELECT p.photo_key, p.thumbnail_key FROM item_photos p JOIN items i ON i.id=p.item_id
