@@ -10,7 +10,7 @@ const db = createClient({ url: dbUrl });
 const { signIn, createCollection, invite, accept } = familyJourney(db);
 test.setTimeout(120_000);
 test.beforeEach(async () => {
-  await db.batch(["item_revisions", "item_photos", "items", "photo_uploads", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["item_revisions", "photo_uploads", "item_photos", "items", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
 });
 test.afterAll(() => db.close());
@@ -248,12 +248,12 @@ test("migration upgrades populated version-three records without changing photo 
   const memberships = (await db.execute("SELECT * FROM memberships")).rows;
   const sessions = (await db.execute("SELECT * FROM sessions")).rows;
   const oldItem = (await db.execute("SELECT id, collection_id, created_by, created_at, status FROM items")).rows[0];
-  const oldPhoto = (await db.execute("SELECT * FROM item_photos")).rows[0];
-  const oldUpload = (await db.execute("SELECT * FROM photo_uploads")).rows[0];
-  for (const table of ["item_revisions", "item_photos", "items", "photo_uploads"]) await db.execute(`DROP TABLE ${table}`);
+  const oldPhoto = (await db.execute("SELECT id, item_id, photo_key, thumbnail_key, width, height, photo_bytes, sha256, created_at FROM item_photos")).rows[0];
+  const oldUpload = (await db.execute("SELECT id, collection_id, account_id, input_bytes, created_at, expires_at, state, attempt, lease_until FROM photo_uploads")).rows[0];
+  for (const table of ["item_revisions", "photo_uploads", "item_photos", "items"]) await db.execute(`DROP TABLE ${table}`);
   for (const statement of (await readFile("migrations/0003_photo_drafts.sql", "utf8")).split(";").map(s => s.trim()).filter(Boolean)) await db.execute(statement);
   await insert("items", oldItem); await insert("item_photos", oldPhoto); await insert("photo_uploads", oldUpload);
-  await db.execute("DELETE FROM schema_migrations WHERE name='0004_item_details.sql'");
+  await db.execute("DELETE FROM schema_migrations WHERE name IN ('0004_item_details.sql', '0005_multiple_item_photos.sql')");
   // Fail at the final CREATE TABLE, after all ALTERs, to prove atomic rollback.
   await db.execute("CREATE TABLE item_revisions (marker TEXT)");
   expect(() => execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv })).toThrow();
@@ -265,7 +265,8 @@ test("migration upgrades populated version-three records without changing photo 
   expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0);
   expect((await db.execute("SELECT * FROM memberships")).rows).toEqual(memberships);
   expect((await db.execute("SELECT * FROM sessions")).rows).toEqual(sessions);
-  expect((await db.execute("SELECT * FROM item_photos")).rows[0]).toEqual(oldPhoto);
+  // Explicit columns avoid native libSQL's stale SELECT-* column metadata across external DDL.
+  expect((await db.execute("SELECT id, item_id, photo_key, thumbnail_key, width, height, photo_bytes, sha256, created_at, created_by, removed_at, removed_by FROM item_photos")).rows[0]).toMatchObject({ ...oldPhoto, created_by: oldItem.created_by, removed_at: null, removed_by: null });
   expect(await current(item.id)).toMatchObject({ ...oldItem, version: 1, name: "", description: "", last_edited_by: null });
   await page.goto(item.path); await save(page, "Existing belonging", "A photo captured before this migration.");
   expect((await revisions(item.id))[0].edited_by).toBe(oldItem.created_by);

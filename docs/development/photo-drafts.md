@@ -1,6 +1,6 @@
 # One-photo draft capture
 
-Scope: [#6](https://github.com/iamthatbenj/item_indexer/issues/6). Members can capture/select one photo, save a draft item without descriptive fields, browse thumbnails, and open its retained photo. Additional photos, names/descriptions, stories, exports, interrupted-work recovery across reloads, and full budget controls are later tickets. No transfer workflow is introduced. [#7](item-details.md) extends these photo-backed items with shared names/descriptions, recoverable revisions and stale-save protection; its migration #4 must precede its deployment.
+Scope: [#6](https://github.com/iamthatbenj/item_indexer/issues/6). Members can capture/select one photo, save a draft item without descriptive fields, browse thumbnails, and open its retained photo. Additional photos, names/descriptions, stories, exports, interrupted-work recovery across reloads, and full budget controls are later tickets. No transfer workflow is introduced. [#7](item-details.md) extends these photo-backed items with shared names/descriptions, recoverable revisions and stale-save protection; its migration #4 must precede its deployment. [#8](item-photos.md) adds multiple views and recoverable view removal. After migration #5, older single-photo releases are not safe rollback targets; follow that runbook's coordinated capture-pause/fix-forward procedure.
 
 ## Image contract and resource limits
 

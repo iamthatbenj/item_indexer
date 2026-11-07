@@ -66,11 +66,11 @@ The revocation test warms the lazy development membership handler before opening
 
 ## Deployment and rollback
 
-**Local implementation only: no production migration or deployment has been performed for #7.** Before an auto-deploying push, explicitly apply migration #4 with the protected production credentials using the hosted operator runbook. No new secrets, mail configuration, bucket settings or provider resources are required.
+**#7 was deployed as d90db2d after operator-confirmed production migration #4.** The operator confirmed completion/saved details, stale-save rejection with retained attempted text, separate-tab latest-version review, and visibility to another member. Additional manual device/assistive-technology checks below are not independently confirmed. Before an auto-deploying push, explicitly apply migration #4 with the protected production credentials using the hosted operator runbook. No new secrets, mail configuration, bucket settings or provider resources are required.
 
 The migration uses transactional ALTERs, preserving existing items and photo foreign keys. It replaces the old status column but does not rebuild/drop item or photo tables. Existing records begin with blank text/version 1; history is recorded when the first shared edit supersedes that initial capture. The migration runner rolls back every ALTER if a later statement fails. Never edit an already-applied migration checksum.
 
-Rollback means rolling the **application** back to #6 while keeping the new schema and data. #6 captures items using an explicit column list, which remains compatible with the added defaults and generated status; it simply does not display names/descriptions/history. Do not drop text or revision data, or attempt to undo the migration by restoring the old draft-only status constraint. Prefer a compatible fix-forward. Documented backup/recovery acceptance is still separate.
+Rollback means rolling the **application** back to #6 while keeping the new schema and data. #6 captures items using an explicit column list, which remains compatible with the added defaults and generated status; it simply does not display names/descriptions/history. Do not drop text or revision data, or attempt to undo the migration by restoring the old draft-only status constraint. Prefer a compatible fix-forward. **Once [#8 migration #5](item-photos.md) is applied, this older rollback advice no longer applies:** #7/#6 photo writes and photo queries are incompatible with the multiple-photo lifecycle. Follow the #8 coordinated upgrade/fix-forward procedure instead. Documented backup/recovery acceptance is still separate.
 
 Hosted acceptance after approved deployment:
 

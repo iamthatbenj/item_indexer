@@ -9,22 +9,25 @@ export class ItemEditError extends Error {
 
 export async function listItems(accountId: string, collectionId: string) {
   const result = await database().execute({
-    sql: `SELECT i.id, i.name, i.status FROM items i JOIN item_photos p ON p.item_id=i.id
-          JOIN memberships m ON m.collection_id=i.collection_id
-          WHERE i.collection_id=? AND m.account_id=? ORDER BY i.created_at DESC, i.id`, args: [collectionId, accountId],
+    sql: `SELECT i.id, i.name, i.status FROM items i JOIN memberships m ON m.collection_id=i.collection_id
+          WHERE i.collection_id=? AND m.account_id=? AND EXISTS (
+            SELECT 1 FROM item_photos p WHERE p.item_id=i.id AND p.removed_at IS NULL
+          ) ORDER BY i.created_at DESC, i.id`, args: [collectionId, accountId],
   });
   return result.rows.map(row => ({ id: String(row.id), name: String(row.name), status: String(row.status) }));
 }
 
 export async function getItem(accountId: string, collectionId: string, id: string) {
   const result = await database().execute({
-    sql: `SELECT i.id, i.name, i.description, i.version, i.status, p.width, p.height FROM items i JOIN item_photos p ON p.item_id=i.id
-          JOIN memberships m ON m.collection_id=i.collection_id WHERE i.id=? AND i.collection_id=? AND m.account_id=?`, args: [id, collectionId, accountId],
+    sql: `SELECT i.id, i.name, i.description, i.version, i.status, p.id AS photo_id, p.width, p.height FROM items i JOIN item_photos p ON p.item_id=i.id
+          JOIN memberships m ON m.collection_id=i.collection_id WHERE i.id=? AND i.collection_id=? AND m.account_id=? AND p.removed_at IS NULL
+          ORDER BY p.created_at, p.id`, args: [id, collectionId, accountId],
   });
   const row = result.rows[0];
   return row ? {
     id: String(row.id), name: String(row.name), description: String(row.description),
-    version: Number(row.version), status: String(row.status), width: Number(row.width), height: Number(row.height),
+    version: Number(row.version), status: String(row.status),
+    photos: result.rows.map(photo => ({ id: String(photo.photo_id), width: Number(photo.width), height: Number(photo.height) })),
   } : null;
 }
 
@@ -42,7 +45,7 @@ export async function editItem(accountId: string, collectionId: string, id: stri
             WHERE i.id=? AND i.collection_id=? AND m.account_id=?`, args: [id, collectionId, accountId],
     })).rows[0];
     if (!row) throw new ItemEditError("This item is unavailable. Your text remains on this page.", 404);
-    const photo = await tx.execute({ sql: "SELECT 1 FROM item_photos WHERE item_id=?", args: [id] });
+    const photo = await tx.execute({ sql: "SELECT 1 FROM item_photos WHERE item_id=? AND removed_at IS NULL", args: [id] });
     if (!photo.rows.length) throw new ItemEditError("A retained photo is required before saving item details. Your text remains on this page.", 409);
     if (Number(row.version) !== version) throw new ItemEditError("The saved version changed while you were editing. Your text remains below and has not replaced anyone’s changes. Open the latest saved item in a new tab to review it before editing again.", 409);
     // Exact repeat/no-op on the current version does not manufacture history.
