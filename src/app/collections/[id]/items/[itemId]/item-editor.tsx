@@ -2,10 +2,15 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ITEM_NAME_LIMIT, ITEM_DESCRIPTION_LIMIT } from "@/shared/item-details";
+import { personLabel, type PersonSummary } from "@/shared/people";
 
-export default function ItemEditor({ path, initial }: { path: string; initial: { name: string; description: string; version: number } }) {
+export default function ItemEditor({ path, peoplePath, people, initial }: { path: string; peoplePath: string; people: PersonSummary[]; initial: { name: string; description: string; version: number; currentKeeperId: string } }) {
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description);
+  const [currentKeeper, setCurrentKeeper] = useState(initial.currentKeeperId);
+  const [choices, setChoices] = useState(people);
+  const [filter, setFilter] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   // Keep the version paired with these fields even if RSC props are refreshed.
   const [version] = useState(initial.version);
   const [ready, setReady] = useState(false);
@@ -16,13 +21,26 @@ export default function ItemEditor({ path, initial }: { path: string; initial: {
   const inFlight = useRef(false);
   useEffect(() => { setReady(true); }, []);
 
+  async function refreshPeople() {
+    setRefreshing(true); setError("");
+    try {
+      const response = await fetch(`${peoplePath}/records`, { cache: "no-store", signal: AbortSignal.timeout(30_000) });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(result?.people)) throw new Error("People could not be refreshed. Check your access or connection; your item details remain here.");
+      setChoices(result.people);
+      setProgress("Current keeper choices refreshed. Your unsaved details and editing version are unchanged.");
+    } catch (error) {
+      setError(error instanceof Error && error.name === "Error" ? error.message : "People could not be refreshed. Your item details remain here.");
+    } finally { setRefreshing(false); }
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (inFlight.current || conflict) return;
     inFlight.current = true; setBusy(true); setError(""); setProgress("Saving your item — please wait for confirmation.");
     try {
       const response = await fetch(`${path}/details`, {
-        method: "POST", body: new URLSearchParams({ version: String(version), name, description }), signal: AbortSignal.timeout(30_000),
+        method: "POST", body: new URLSearchParams({ version: String(version), name, description, currentKeeper }), signal: AbortSignal.timeout(30_000),
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || result?.saved !== true) {
@@ -51,7 +69,17 @@ export default function ItemEditor({ path, initial }: { path: string; initial: {
         <p className="hint" id="item-name-help">Up to {ITEM_NAME_LIMIT} characters. Leave blank if you do not know it yet.</p>
         <label htmlFor="item-description">Short description</label>
         <textarea id="item-description" name="description" rows={5} maxLength={ITEM_DESCRIPTION_LIMIT} value={description} onChange={event => setDescription(event.target.value)} aria-describedby="item-description-help" />
-        <p className="hint" id="item-description-help">Up to {ITEM_DESCRIPTION_LIMIT} characters. Stories, keeper, location, category, and financial information are not required.</p>
+        <p className="hint" id="item-description-help">Up to {ITEM_DESCRIPTION_LIMIT} characters. Stories, current keeper, location, category, and financial information are not required.</p>
+        <label htmlFor="keeper-filter">Find a current keeper</label>
+        <input id="keeper-filter" type="search" value={filter} onChange={event => setFilter(event.target.value)} onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }} maxLength={200} aria-describedby="keeper-help" />
+        <label htmlFor="current-keeper">Current keeper (optional)</label>
+        <select id="current-keeper" name="currentKeeper" value={currentKeeper} onChange={event => setCurrentKeeper(event.target.value)} aria-describedby="keeper-help">
+          <option value="">No current keeper recorded</option>
+          {choices.filter(person => person.id === currentKeeper || personLabel(person).toLocaleLowerCase().includes(filter.toLocaleLowerCase())).map(person => <option key={person.id} value={person.id}>{personLabel(person)}</option>)}
+        </select>
+        <p id="keeper-help" className="hint">The current keeper cares for this item; this does not establish legal ownership. They do not need an app account. Missing keeper information does not prevent completion.</p>
+        <p><a href={peoplePath} target="_blank" rel="noopener">Manage people in a new tab</a>. Then refresh choices here without losing your unsaved item details.</p>
+        <button type="button" className="secondary" disabled={refreshing} onClick={refreshPeople}>{refreshing ? "Refreshing people…" : "Refresh keeper choices"}</button>
       </fieldset>
       <p role={progress ? "status" : undefined} aria-live="polite">{progress}</p>
       {error && <p role="alert" className="notice error">{error}</p>}

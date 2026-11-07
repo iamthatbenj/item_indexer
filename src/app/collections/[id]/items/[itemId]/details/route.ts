@@ -12,7 +12,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       for (const field of ["version", "name", "description"]) {
         if (form.getAll(field).length !== 1) throw new ItemEditError("Submit one editing version, name, and description.");
       }
-      await editItem(account.id, id, itemId, form.get("version")!, form.get("name")!, form.get("description")!);
+      if (form.getAll("currentKeeper").length > 1) throw new ItemEditError("Submit at most one current keeper.");
+      await editItem(account.id, id, itemId, form.get("version")!, form.get("name")!, form.get("description")!, form.has("currentKeeper") ? form.get("currentKeeper")! : undefined);
       return Response.json({ saved: true }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
       if (error instanceof ItemEditError) return Response.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });

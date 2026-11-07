@@ -16,7 +16,7 @@ p { max-width: 65ch; }
 .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1.3rem; align-items: start; }
 .card { background: #fffdf8; border: 1px solid var(--line); padding: clamp(1.2rem, 3vw, 2rem); border-radius: .6rem; margin-bottom: 1.3rem; }
 label { display: block; font-weight: 600; margin: 1rem 0 .35rem; }
-input:not([type=checkbox]), textarea { display: block; width: 100%; max-width: 34rem; border: 1px solid #869281; border-radius: .3rem; padding: .75rem; background: white; color: var(--ink); font: inherit; }
+input:not([type=checkbox]), textarea, select { display: block; width: 100%; max-width: 34rem; border: 1px solid #869281; border-radius: .3rem; padding: .75rem; background: white; color: var(--ink); font: inherit; }
 button { min-height: 44px; border: 1px solid var(--green); border-radius: .3rem; padding: .7rem 1.1rem; background: var(--green); color: white; font: inherit; font-weight: 600; cursor: pointer; margin-top: 1.2rem; }
 .secondary { background: transparent; color: var(--green); margin: 0; }
 :focus-visible { outline: 3px solid #ad6b24; outline-offset: 3px; }
@@ -47,6 +47,7 @@ button:disabled { opacity: .65; cursor: wait; }
 .draft-grid a { display: block; overflow-wrap: anywhere; }
 .item-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 .item-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.keeper-summary, .people-list .hint { overflow-wrap: anywhere; }
 textarea { resize: vertical; }
 .draft-grid span { display: block; margin-top: .5rem; }
 footer { border-top: 1px solid var(--line); padding: 1.5rem 0; color: var(--muted); font-size: .85rem; }

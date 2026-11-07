@@ -2,13 +2,14 @@ import { test, expect } from "@playwright/test";
 import { createClient } from "@libsql/client";
 import { execFileSync } from "node:child_process";
 import { rm, writeFile } from "node:fs/promises";
+import { removePeopleSchema } from "./support/legacy-database";
 import { familyJourney, dbUrl, outbox, operatorEnv, origin, post } from "./support/family";
 
 const db = createClient({ url: dbUrl });
 const { signIn, createCollection, invite, accept, codeFor } = familyJourney(db);
 
 test.beforeEach(async () => {
-  await db.batch(["item_revisions", "photo_uploads", "item_photos", "items", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { force: true, recursive: true });
 });
 test.afterAll(() => db.close());
@@ -225,6 +226,7 @@ test("existing founder records survive upgrading a version-one database and invi
   await signIn(page, "founder@example.com", true);
   const collection = await createCollection(page, "Existing family record");
   // Reconstruct the actual previous schema in this disposable test database.
+  await removePeopleSchema(db);
   for (const table of ["item_revisions", "photo_uploads", "item_photos", "items", "invitations"]) await db.execute(`DROP TABLE ${table}`);
   await db.execute("DELETE FROM schema_migrations WHERE name IN ('0002_family_invitations.sql', '0003_photo_drafts.sql', '0004_item_details.sql', '0005_multiple_item_photos.sql')");
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
@@ -232,7 +234,7 @@ test("existing founder records survive upgrading a version-one database and invi
   await expect(page.getByRole("heading", { name: "Existing family record", exact: true })).toBeVisible();
   expect((await db.execute("SELECT role FROM memberships")).rows[0].role).toBe("administrator");
   await invite(page, collection, "relative@example.com");
-  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(5);
+  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(6);
 });
 
 test("administrator permission is rechecked on submission and per-administrator invitations are throttled", async ({ page }) => {

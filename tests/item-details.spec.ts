@@ -4,13 +4,14 @@ import { randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { removePeopleSchema } from "./support/legacy-database";
 import { familyJourney, dbUrl, outbox, origin, post, operatorEnv } from "./support/family";
 
 const db = createClient({ url: dbUrl });
 const { signIn, createCollection, invite, accept } = familyJourney(db);
 test.setTimeout(120_000);
 test.beforeEach(async () => {
-  await db.batch(["item_revisions", "photo_uploads", "item_photos", "items", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
 });
 test.afterAll(() => db.close());
@@ -250,6 +251,7 @@ test("migration upgrades populated version-three records without changing photo 
   const oldItem = (await db.execute("SELECT id, collection_id, created_by, created_at, status FROM items")).rows[0];
   const oldPhoto = (await db.execute("SELECT id, item_id, photo_key, thumbnail_key, width, height, photo_bytes, sha256, created_at FROM item_photos")).rows[0];
   const oldUpload = (await db.execute("SELECT id, collection_id, account_id, input_bytes, created_at, expires_at, state, attempt, lease_until FROM photo_uploads")).rows[0];
+  await removePeopleSchema(db);
   for (const table of ["item_revisions", "photo_uploads", "item_photos", "items"]) await db.execute(`DROP TABLE ${table}`);
   for (const statement of (await readFile("migrations/0003_photo_drafts.sql", "utf8")).split(";").map(s => s.trim()).filter(Boolean)) await db.execute(statement);
   await insert("items", oldItem); await insert("item_photos", oldPhoto); await insert("photo_uploads", oldUpload);

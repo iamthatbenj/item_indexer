@@ -32,6 +32,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
       <p>You are a family {collection.role}. Only this collection’s members can see its record.</p>
       <p>All members have equal editing permissions. Administrators manage invitations and access, not editorial authority.</p>
     </section>
+    <p><Link href={`/collections/${id}/people`}>Manage people and current keepers</Link></p>
     <PhotoCapture collectionId={id} />
     <section className="card" aria-labelledby="belongings-heading">
       <h2 id="belongings-heading">Belongings</h2>

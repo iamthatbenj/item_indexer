@@ -5,6 +5,7 @@ import { readFile, rm } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { GetObjectCommand, ListObjectsV2Command, PutBucketPolicyCommand, DeleteBucketPolicyCommand } from "@aws-sdk/client-s3";
 import sharp from "sharp";
+import { removePeopleSchema } from "./support/legacy-database";
 import { familyJourney, dbUrl, outbox, origin, post, operatorEnv } from "./support/family";
 import { testStorage } from "./support/storage";
 
@@ -17,7 +18,7 @@ const gallery = (page: Page) => page.locator(".item-view");
 test.setTimeout(120_000);
 test.beforeAll(() => { storage = testStorage(); });
 test.beforeEach(async ({ request }) => {
-  await db.batch(["item_revisions", "photo_uploads", "item_photos", "items", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
   // Compile lazy development handlers before any active app page can receive
   // a Fast Refresh navigation. These anonymous requests mutate no records.
@@ -313,6 +314,7 @@ test("populated version-four upgrade preserves photos, text revisions and sessio
   const upload = { ...(await db.execute("SELECT * FROM photo_uploads")).rows[0] }; delete upload.target_item_id;
   const items = (await db.execute("SELECT * FROM items")).rows; const history = (await db.execute("SELECT * FROM item_revisions")).rows;
   const sessions = (await db.execute("SELECT * FROM sessions")).rows;
+  await removePeopleSchema(db);
   await db.execute("DROP TABLE photo_uploads"); await db.execute("DROP TABLE item_photos");
   const statements = (await readFile("migrations/0003_photo_drafts.sql", "utf8")).split(";").map(s => s.trim()).filter(Boolean);
   for (const statement of statements.filter(s => s.startsWith("CREATE TABLE photo_uploads") || s.startsWith("CREATE INDEX photo_uploads_") || s.startsWith("CREATE TABLE item_photos"))) await db.execute(statement);

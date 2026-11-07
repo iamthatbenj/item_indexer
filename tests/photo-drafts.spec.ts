@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import sharp from "sharp";
 import exifReader from "exif-reader";
 import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, PutBucketPolicyCommand, DeleteBucketPolicyCommand } from "@aws-sdk/client-s3";
+import { removePeopleSchema } from "./support/legacy-database";
 import { familyJourney, dbUrl, outbox, origin, post, operatorEnv } from "./support/family";
 import { testStorage } from "./support/storage";
 
@@ -17,7 +18,7 @@ let storage: ReturnType<typeof testStorage>;
 test.beforeAll(() => { storage = testStorage(); });
 test.setTimeout(90_000);
 test.beforeEach(async () => {
-  await db.batch(["item_revisions", "photo_uploads", "item_photos", "items", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
 });
 test.afterAll(() => { db.close(); storage.client.destroy(); });
@@ -361,6 +362,7 @@ test("bounded upload forms reject foreign origins, invalid sizes, oversize bodie
 test("photo migration upgrades a version-two database without changing collections, memberships or sessions", async ({ page }) => {
   const collection = await family(page);
   const before = (await db.execute("SELECT * FROM memberships")).rows;
+  await removePeopleSchema(db);
   for (const table of ["item_revisions", "photo_uploads", "item_photos", "items"]) await db.execute(`DROP TABLE ${table}`);
   await db.execute("DELETE FROM schema_migrations WHERE name IN ('0003_photo_drafts.sql', '0004_item_details.sql', '0005_multiple_item_photos.sql')");
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
