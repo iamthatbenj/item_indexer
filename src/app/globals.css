@@ -46,7 +46,8 @@ button:disabled { opacity: .65; cursor: wait; }
 .draft-grid img { display: block; width: 100%; height: 12rem; object-fit: contain; background: var(--paper); }
 .draft-grid a { display: block; overflow-wrap: anywhere; }
 .item-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
-.item-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.item-description, .story-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.story h3, .story .hint { overflow-wrap: anywhere; }
 .keeper-summary, .people-list .hint { overflow-wrap: anywhere; }
 textarea { resize: vertical; }
 .draft-grid span { display: block; margin-top: .5rem; }

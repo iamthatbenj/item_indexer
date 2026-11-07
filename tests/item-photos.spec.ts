@@ -18,7 +18,7 @@ const gallery = (page: Page) => page.locator(".item-view");
 test.setTimeout(120_000);
 test.beforeAll(() => { storage = testStorage(); });
 test.beforeEach(async ({ request }) => {
-  await db.batch(["person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
   // Compile lazy development handlers before any active app page can receive
   // a Fast Refresh navigation. These anonymous requests mutate no records.

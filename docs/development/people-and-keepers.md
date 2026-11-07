@@ -8,7 +8,7 @@ Follow **Manage people and current keepers** from a collection. The private dire
 
 The item's existing shared-details form includes a **Current keeper (optional)** selector and a name/note filter. The selected person stays in the choices when a filter hides other results. Pressing Enter in the filter does not submit the item. Manage people in a separate tab and **Refresh keeper choices** to fetch the authorized directory without losing unsaved text, the selected person or the original editing version. Photo refreshes likewise preserve these fields. Keeper absence never prevents completion: retained photo, name and description remain the completion criteria.
 
-Recording a person requires no email or invitation, creates no account/membership and grants no access. Renaming a person updates current identifying labels wherever that stable person is referenced; it does not change who recorded or edited earlier contributions. Removed members' people, revisions and editor account references survive collection-access removal. A keeper can be someone who has never used the app.
+Recording a person requires no email or invitation, creates no account/membership and grants no access. Renaming a person updates current identifying labels wherever that stable person is referenced; it does not change who recorded or edited earlier contributions. Removed members' people, revisions and editor account references survive collection-access removal. A keeper can be someone who has never used the app. [#10 also reuses these people as storytellers](attributed-stories.md), preserving storyteller credit separately from the recording member and recording-time identifying version.
 
 Routes:
 

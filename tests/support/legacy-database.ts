@@ -1,8 +1,14 @@
 import type { Client } from "@libsql/client";
 
+export async function removeStoriesSchema(db: Client) {
+  if (Number((await db.execute("SELECT COUNT(*) AS count FROM stories")).rows[0].count) !== 0) throw new Error("Legacy fixture must have no stories.");
+  await db.batch(["DROP TABLE stories", "DELETE FROM schema_migrations WHERE name='0007_attributed_stories.sql'"], "write");
+}
+
 // Only for isolated upgrade tests constructing pre-#9 databases. No people may
 // exist: these tests are about migrating earlier populated item/photo schemas.
 export async function removePeopleSchema(db: Client) {
+  await removeStoriesSchema(db);
   if (Number((await db.execute("SELECT COUNT(*) AS count FROM people")).rows[0].count) !== 0) throw new Error("Legacy fixture must have no people.");
   await db.batch([
     "DROP INDEX items_current_keeper",
