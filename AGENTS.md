@@ -1,3 +1,7 @@
+## Required pre-commit review
+
+Git commits must pass `.githooks/pre-commit`, which reviews staged changes with Pi before creating the commit. If review rejects a commit, resolve the findings, stage the fixes, and retry. Do not bypass the gate with `--no-verify`, altered hooks/configuration, or a fabricated review result. Review failures are blocking too. See `.pi/README.md` for setup and behavior.
+
 ## Agent skills
 
 ### Issue tracker
