@@ -28,7 +28,7 @@ export default async function Members({ params, searchParams }: {
     <div className="notice" id="access-consequences">
       <p>Removing access preserves contributions and historical attribution. It does not delete an account or affect membership in other family collections.</p>
       <p>Existing sessions lose permission for new requests to this collection. Previously downloaded or displayed records cannot be recalled. Any already issued file links may work until their bounded expiry; prior downloads and exported copies cannot be revoked.</p>
-      <p className="hint">Photo and export tools are not implemented yet. Those tools must check current membership before issuing new access.</p>
+      <p className="hint">Photo access is checked before issuing each new authorization. Export tools are not implemented yet and must follow the same rule.</p>
     </div>
     <p>Keep at least one administrator who can still sign in. You can change your own role or remove your own access only while another administrator remains.</p>
     {message && <p role={change === "last-administrator" ? "alert" : "status"} className={`notice${change === "last-administrator" ? " error" : ""}`}>{message}</p>}

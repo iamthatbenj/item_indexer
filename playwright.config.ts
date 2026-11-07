@@ -14,6 +14,7 @@ export default defineConfig({
     command: "node --import tsx tests/start-server.ts",
     url: "http://127.0.0.1:3100/sign-in",
     reuseExistingServer: false,
+    gracefulShutdown: { signal: "SIGTERM", timeout: 20_000 },
     timeout: 120_000,
   },
 });

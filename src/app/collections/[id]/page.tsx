@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentAccount } from "@/server/auth";
 import { getCollection, listCollections } from "@/server/collections";
+import { listPhotoDrafts } from "@/server/photo-drafts";
+import PhotoCapture from "./photo-capture";
 
 export default async function Collection({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ invite?: string; membership?: string }> }) {
   const account = await currentAccount();
@@ -10,6 +12,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
   const collection = await getCollection(account.id, id);
   if (!collection) notFound();
   const collections = await listCollections(account.id);
+  const drafts = await listPhotoDrafts(account.id, id);
   const query = await searchParams;
   const messages: Record<string, string> = {
     sent: "Invitation sent. It expires in seven days. The recipient must sign in with the invited email.",
@@ -28,7 +31,16 @@ export default async function Collection({ params, searchParams }: { params: Pro
       <h2>Your collection is ready</h2>
       <p>You are a family {collection.role}. Only this collection’s members can see its record.</p>
       <p>All members have equal editing permissions. Administrators manage invitations and access, not editorial authority.</p>
-      <p>Photo capture is coming in a later development slice.</p>
+    </section>
+    <PhotoCapture collectionId={id} />
+    <section className="card" aria-labelledby="belongings-heading">
+      <h2 id="belongings-heading">Belongings</h2>
+      {drafts.length === 0 ? <p>No saved belongings yet. Start with one photo.</p> : <ul className="draft-grid">{drafts.map(draft => <li key={draft.id}>
+        <Link href={`/collections/${id}/items/${draft.id}`}>
+          <img src={`/collections/${id}/items/${draft.id}/photo?size=thumbnail`} alt="Photo of an untitled belonging" loading="lazy" width={240} height={240} />
+          <span>Untitled belonging — Draft item</span>
+        </Link>
+      </li>)}</ul>}
     </section>
     <nav className="card" aria-label="Switch family collection">
       <h2>Switch family collection</h2>

@@ -2,7 +2,7 @@
 
 A private family record of belongings and their stories. Next.js/TypeScript, Turso-compatible libSQL, and (in later slices) private Cloudflare R2 storage.
 
-Implemented so far: [#2](https://github.com/iamthatbenj/item_indexer/issues/2), approved founder sign-in and private collection creation, deployed through [#3](https://github.com/iamthatbenj/item_indexer/issues/3); plus [#4](https://github.com/iamthatbenj/item_indexer/issues/4), email-bound family invitations, member sign-in, and collection switching. [#5](https://github.com/iamthatbenj/item_indexer/issues/5) adds [administrator and membership management](docs/development/family-membership.md), including safe final-administrator protection and collection-scoped access removal. See the [invitation migration/deployment ordering](docs/development/family-invitations.md) before shipping #4; #5 needs no additional migration. Photos and exports are not implemented yet. Product scope: [`docs/prd.md`](docs/prd.md).
+Implemented so far: [#2](https://github.com/iamthatbenj/item_indexer/issues/2), approved founder sign-in and private collection creation, deployed through [#3](https://github.com/iamthatbenj/item_indexer/issues/3); plus [#4](https://github.com/iamthatbenj/item_indexer/issues/4), email-bound family invitations, member sign-in, and collection switching. [#5](https://github.com/iamthatbenj/item_indexer/issues/5) adds [administrator and membership management](docs/development/family-membership.md), including safe final-administrator protection and collection-scoped access removal. See the [invitation migration/deployment ordering](docs/development/family-invitations.md) before shipping #4; #5 needs no additional migration. [#6](https://github.com/iamthatbenj/item_indexer/issues/6) adds [one-photo draft capture and private photo viewing](docs/development/photo-drafts.md), requiring migration #3 and private object storage before deployment. Exports are not implemented yet. Product scope: [`docs/prd.md`](docs/prd.md).
 
 ## Local setup
 
@@ -17,6 +17,8 @@ npm run db:migrate
 npm run founder:approve -- you@example.com
 npm run dev
 ```
+
+For photo capture, also follow the [local private-storage setup](docs/development/photo-drafts.md#local-interactive-development) and fill the storage variables in `.env.local`. Sign-in and collection management do not require storage credentials.
 
 Open **http://localhost:3000** (the exact `APP_ORIGIN` configured in `.env.local`). Request a code for the approved email. Development messages are private local JSON files under `.local/outbox/`; open the matching message to retrieve the code. They are not exposed through a web endpoint or printed in server logs. Delete the outbox when no longer needed: it contains usable sign-in codes and email addresses.
 
@@ -44,12 +46,12 @@ npm run build
 npm audit --omit=dev
 ```
 
-Playwright starts its own server on `127.0.0.1:3100`, with a new isolated file database and captured email. Each run **replaces `.local/e2e/` only**; never put real records there. Tests do not use `.env.local` database credentials or deliver actual email. Linux hosts may need Playwright browser system dependencies; follow the installer output for the host OS.
+Tests also require **Podman** with working rootless networking; the first run pulls the digest-pinned SeaweedFS image. Playwright starts its own server on `127.0.0.1:3100`, with a new isolated file database, captured email, and a disposable private S3-compatible service on `127.0.0.1:9100`. Each run **replaces `.local/e2e/` only**; never put real records there. Tests do not use `.env.local` database credentials or deliver actual email. Linux hosts may need Playwright browser system dependencies; follow the installer output for the host OS.
 
-The browser/integration suite covers the founder and invitation journeys, durable records, collection isolation and switching, email-bound acceptance, code/invitation expiry/reuse/concurrency, throttling, session expiration/revocation, administrator changes and concurrent final-administrator protection, preservation after access removal, CSRF boundaries, failure rollback, migration upgrades/reruns, and mobile-width usability. This is not real-device or hosted-service acceptance.
+The browser/integration suite covers the founder and invitation journeys, durable records, collection isolation and switching, email-bound acceptance, code/invitation expiry/reuse/concurrency, throttling, session expiration/revocation, administrator changes and concurrent final-administrator protection, preservation after access removal, CSRF boundaries, failure rollback, migration upgrades/reruns, mobile-width usability, and real photo selection/processing/storage/privacy/failure/retry behavior. This is not real-device or hosted-service acceptance.
 
 ## Production boundary
 
 The founder pilot is hosted at **https://belongings.josefson.net** on Vercel with Turso and Resend SMTP. See the [hosted operator runbook](docs/development/hosted-founder-journey.md) for DNS, environment separation, explicit migrations/approval, deployment/rollback, acceptance evidence, and current baseline costs. Configure `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`, a random `AUTH_SECRET`, an exact HTTPS `APP_ORIGIN`, and the SMTP variables documented in `.env.example`. File email delivery is rejected in production or with remote databases. Production SMTP requires encrypted transport and does not enable debug logging.
 
-No R2 buckets or credentials are needed for this slice. Do not treat a successful build or the local test results as proof of live email delivery, provider pricing, or the full below-$10/month budget.
+Sign-in/membership features need no R2 resources. Photo capture does: configure a private R2 Standard bucket, scoped server-only credentials, CORS and staging lifecycle, and apply migration #3 **before** an auto-deploying push. See the [photo rollout and manual acceptance checklist](docs/development/photo-drafts.md#deployment-ordering-and-acceptance-still-required). Do not treat a successful build or the local test results as proof of live email delivery, provider pricing, or the full below-$10/month budget.

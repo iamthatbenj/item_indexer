@@ -10,7 +10,7 @@ const relativeEmail = "relative@example.com";
 
 test.setTimeout(75_000);
 test.beforeEach(async () => {
-  await db.batch(["invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["item_photos", "items", "photo_uploads", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
 });
 test.afterAll(() => db.close());
