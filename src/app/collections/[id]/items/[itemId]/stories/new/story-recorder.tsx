@@ -64,7 +64,7 @@ export default function StoryRecorder({ path, peoplePath, people }: { path: stri
       {conflict && <p><a href={path} target="_blank" rel="noopener">Open saved stories in a new tab</a>. Keep this tab to copy your attempted story; nothing is automatically replaced.</p>}
       <button type="submit" disabled={!ready || busy || conflict}>{busy ? "Recording…" : "Record story"}</button>
     </form>
-    <p className="hint">Online connection required. Unsuccessful saves preserve your story only while this page stays open. Editing existing stories follows separately.</p>
+    <p className="hint">Online connection required. Unsuccessful saves preserve your story only while this page stays open. Existing stories can be edited from the item, preserving earlier versions and attribution.</p>
     <noscript>Recording requires JavaScript so unsuccessful saves can preserve your attempted story.</noscript>
   </section>;
 }

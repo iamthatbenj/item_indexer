@@ -47,7 +47,13 @@ button:disabled { opacity: .65; cursor: wait; }
 .draft-grid a { display: block; overflow-wrap: anywhere; }
 .item-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 .item-description, .story-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.story h3, .story .hint { overflow-wrap: anywhere; }
+.story h3, .story .hint, .story-attribution { overflow-wrap: anywhere; }
+.conflict-review { border-top: 1px solid var(--line); padding-top: 1rem; }
+.comparison-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1.2rem; }
+.comparison-panels section { min-width: 0; border: 1px solid var(--line); padding: 1rem; }
+.comparison-panels h3, .comparison-panels dd { overflow-wrap: anywhere; }
+.comparison-panels dt { font-weight: 600; }
+.comparison-panels dd { margin: 0 0 1rem; white-space: pre-wrap; }
 .keeper-summary, .people-list .hint { overflow-wrap: anywhere; }
 textarea { resize: vertical; }
 .draft-grid span { display: block; margin-top: .5rem; }

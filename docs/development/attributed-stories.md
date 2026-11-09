@@ -12,9 +12,9 @@ Story text is plain text, up to 10,000 JavaScript UTF-16 code units; surrounding
 
 - `GET /collections/:collection/items/:item/stories/new`: private form; anonymous visitors redirect to sign-in, nonmembers/inaccessible items get not-found.
 - `POST /collections/:collection/items/:item/stories`: exact-Origin URL-encoded form, exactly one each of `id`, `storyteller`, `text`, with a **96 KiB** bound. This accommodates maximum-length percent-encoded Unicode; existing other-route limits are unchanged.
-- Story reads are server-rendered on the authorized item page. No public story/share link, standalone story-read JSON API, editing, deletion, history browser or reconciliation API is introduced.
+- Story reads are server-rendered on the authorized item page. No public story/share link, standalone story-read JSON API, editing, deletion, history browser or reconciliation API is introduced by #10. [#11 adds text editing, prior-version capture and latest-content comparison](edit-reconciliation.md), preserving the attribution established here.
 
-The server freshly checks membership and item scope, active-photo existence, and storyteller membership in the **same collection** inside the write transaction. Belonging to both collections does not permit cross-collection attribution or recording on a substituted item. Failed writes leave no partial story. Inaccessible items/operations return 404, signed-out JSON writes 401, invalid fields/references 400, changed-content operation reuse 409. Successful/expected-error POST JSON is private/no-store. Unexpected driver errors use the existing generic 503 boundary without serializing SQL, story content or private diagnostics.
+The server freshly checks membership and item scope, active-photo existence, and the storyteller Person belonging to the **same collection** inside the write transaction. Belonging to both collections does not permit cross-collection attribution or recording on a substituted item. Failed writes leave no partial story. Inaccessible items/operations return 404, signed-out JSON writes 401, invalid fields/references 400, changed-content operation reuse 409. Successful/expected-error POST JSON is private/no-store. Unexpected driver errors use the existing generic 503 boundary without serializing SQL, story content or private diagnostics.
 
 ## Durable identity, attribution and retries
 
@@ -26,7 +26,7 @@ Additive migration `0007_attributed_stories.sql` introduces `stories` and an ite
 - Original recording account/time, distinct from last editing account/time (initially the same).
 - Internal creation-request fingerprint for retry deduplication.
 
-The initial saved story is its current version; no unused revision table is needed before story editing exists. When editing ships, it must snapshot that initial version, including storyteller/recorder/editor identities and times, before replacing it, just as item/person editing already captures previous versions. Recording identity must never be overwritten by editing identity. Multiple contradictory stories remain independent stable records, not competing versions of one canonical account.
+The initial saved story is its current version; no unused revision table is needed before story editing exists. [#11 editing](edit-reconciliation.md) snapshots that initial version, including storyteller/recorder/editor identities and times, before replacing it, just as item/person editing already captures previous versions. Recording identity must never be overwritten by editing identity. Multiple contradictory stories remain independent stable records, not competing versions of one canonical account.
 
 Current cards use the Person's current name/note, consistently with current-keeper labels. Renaming identifying details does not rewrite a story or its historical credit. Resolve the recording-time `(Person ID, version)` from current `people` when versions match, otherwise from `person_revisions`. No assumption that a Person becomes an app member is needed. Accounts, people, stories and identifying history remain after collection membership removal. Future merge/purge implementations must handle current and historical references, not just visible labels.
 
@@ -54,7 +54,7 @@ The 12 dedicated real-database/storage browser/integration cases cover ordinary 
 
 ## Deployment and rollback — approval still required
 
-The operator confirmed production migration #7 is complete. Application deployment and hosted acceptance for #10 remain pending. For future environments, apply migration #7 using the protected production procedure **before any auto-deploying push**. No new secrets/resources/bucket settings or capture pause are needed: #9 remains compatible with the additive table/index. Do not edit applied migration checksums or remove existing data.
+The operator confirmed production migration #7, deployment of 25041e2 and the requested hosted story checks. Additional manual device/assistive-technology checks are not independently confirmed. For future environments, apply migration #7 using the protected production procedure **before any auto-deploying push**. No new secrets/resources/bucket settings or capture pause are needed: #9 remains compatible with the additive table/index. Do not edit applied migration checksums or remove existing data.
 
 Prefer fix-forward. Rolling the application back to #9 keeps story rows, credit and relationships intact but hides stories and removes recording routes; retain the schema for a compatible forward deployment. The earlier #9 keeper-history rollback caveats still apply when considering versions older than #9. Application rollback is not database recovery; backup/recovery acceptance remains separate, and this pilot must not be the sole family record.
 

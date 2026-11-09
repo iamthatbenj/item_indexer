@@ -11,7 +11,7 @@ const db = createClient({ url: dbUrl });
 const { signIn, createCollection, invite, accept } = familyJourney(db);
 test.setTimeout(120_000);
 test.beforeEach(async () => {
-  await db.batch(["stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["story_revisions", "stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
 });
 test.afterAll(() => db.close());

@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { database, writeTransaction } from "./database";
 import { STORY_TEXT_LIMIT } from "@/shared/stories";
 
@@ -8,17 +8,25 @@ export class StoryError extends Error {
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export async function listStories(accountId: string, collectionId: string, itemId: string) {
+async function readStories(accountId: string, collectionId: string, itemId: string, storyId: string | null = null) {
   const result = await database().execute({
-    sql: `SELECT s.id, s.text, s.recorded_at, a.email AS recorder_email, p.id AS storyteller_id, p.name, p.note
+    sql: `SELECT s.id, s.text, s.version, s.recorded_at, s.updated_at, a.email AS recorder_email, e.email AS editor_email, p.id AS storyteller_id, p.name, p.note
           FROM stories s JOIN items i ON i.id=s.item_id
           JOIN memberships m ON m.collection_id=i.collection_id
           JOIN people p ON p.id=s.storyteller_id AND p.collection_id=i.collection_id
-          JOIN accounts a ON a.id=s.recorded_by
-          WHERE i.id=? AND i.collection_id=? AND m.account_id=? ORDER BY s.recorded_at, s.id`,
-    args: [itemId, collectionId, accountId],
+          JOIN accounts a ON a.id=s.recorded_by JOIN accounts e ON e.id=s.last_edited_by
+          WHERE i.id=? AND i.collection_id=? AND m.account_id=? AND (? IS NULL OR s.id=?)
+          AND EXISTS (SELECT 1 FROM item_photos photo WHERE photo.item_id=i.id AND photo.removed_at IS NULL)
+          ORDER BY s.recorded_at, s.id`,
+    args: [itemId, collectionId, accountId, storyId, storyId],
   });
-  return result.rows.map(row => ({ id: String(row.id), text: String(row.text), recordedAt: Number(row.recorded_at), recorderEmail: String(row.recorder_email), storyteller: { id: String(row.storyteller_id), name: String(row.name), note: String(row.note) } }));
+  return result.rows.map(row => ({ id: String(row.id), text: String(row.text), version: Number(row.version), recordedAt: Number(row.recorded_at), updatedAt: Number(row.updated_at), recorderEmail: String(row.recorder_email), editorEmail: String(row.editor_email), storyteller: { id: String(row.storyteller_id), name: String(row.name), note: String(row.note) } }));
+}
+export async function listStories(accountId: string, collectionId: string, itemId: string) {
+  return readStories(accountId, collectionId, itemId);
+}
+export async function getStory(accountId: string, collectionId: string, itemId: string, storyId: string) {
+  return (await readStories(accountId, collectionId, itemId, storyId))[0] ?? null;
 }
 
 export async function createStory(accountId: string, collectionId: string, itemId: string, id: string, storytellerId: string, textInput: string) {
@@ -46,5 +54,34 @@ export async function createStory(accountId: string, collectionId: string, itemI
       sql: "INSERT INTO stories (id, item_id, storyteller_id, storyteller_version, text, recorded_by, recorded_at, last_edited_by, updated_at, creation_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       args: [id, itemId, storytellerId, storyteller.version, text, accountId, now, accountId, now, hash],
     });
+  });
+}
+
+export async function editStory(accountId: string, collectionId: string, itemId: string, storyId: string, versionInput: string, textInput: string) {
+  const version = Number(versionInput);
+  if (!/^[1-9]\d*$/.test(versionInput) || !Number.isSafeInteger(version) || version >= Number.MAX_SAFE_INTEGER) throw new StoryError("The editing version is invalid. Keep your story and open the saved story again.");
+  const text = textInput.trim();
+  if (!text || textInput.length > STORY_TEXT_LIMIT || /\0/.test(textInput)) throw new StoryError(`Enter a story up to ${STORY_TEXT_LIMIT.toLocaleString("en-US")} characters, without null characters.`);
+  await writeTransaction(async tx => {
+    const row = (await tx.execute({
+      sql: `SELECT s.version, s.text, s.storyteller_id, s.storyteller_version, s.recorded_by, s.recorded_at, s.last_edited_by, s.updated_at
+            FROM stories s JOIN items i ON i.id=s.item_id JOIN memberships m ON m.collection_id=i.collection_id
+            JOIN people p ON p.id=s.storyteller_id AND p.collection_id=i.collection_id
+            WHERE s.id=? AND i.id=? AND i.collection_id=? AND m.account_id=?
+            AND EXISTS (SELECT 1 FROM item_photos photo WHERE photo.item_id=i.id AND photo.removed_at IS NULL)`,
+      args: [storyId, itemId, collectionId, accountId],
+    })).rows[0];
+    if (!row) throw new StoryError("This story is unavailable. Your attempted text remains on this page.", 404);
+    if (Number(row.version) !== version) throw new StoryError("The saved story changed while you were editing. Your attempted text remains below. Compare with the latest saved story before revising.", 409);
+    if (row.text === text) return;
+    await tx.execute({
+      sql: "INSERT INTO story_revisions (id, story_id, version, text, storyteller_id, storyteller_version, recorded_by, recorded_at, edited_by, edited_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [randomUUID(), storyId, version, String(row.text), row.storyteller_id, row.storyteller_version, row.recorded_by, row.recorded_at, row.last_edited_by, row.updated_at],
+    });
+    const changed = await tx.execute({
+      sql: "UPDATE stories SET text=?, version=version+1, last_edited_by=?, updated_at=? WHERE id=? AND version=?",
+      args: [text, accountId, Date.now(), storyId, version],
+    });
+    if (changed.rowsAffected !== 1) throw new StoryError("The saved story changed. Keep your attempted text and compare again before revising.", 409);
   });
 }

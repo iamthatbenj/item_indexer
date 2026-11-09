@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ITEM_NAME_LIMIT, ITEM_DESCRIPTION_LIMIT } from "@/shared/item-details";
 import { personLabel, type PersonSummary } from "@/shared/people";
+import ConflictReview from "@/app/components/conflict-review";
 
 export default function ItemEditor({ path, peoplePath, people, initial }: { path: string; peoplePath: string; people: PersonSummary[]; initial: { name: string; description: string; version: number; currentKeeperId: string } }) {
   const [name, setName] = useState(initial.name);
@@ -12,13 +13,14 @@ export default function ItemEditor({ path, peoplePath, people, initial }: { path
   const [filter, setFilter] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   // Keep the version paired with these fields even if RSC props are refreshed.
-  const [version] = useState(initial.version);
+  const [version, setVersion] = useState(initial.version);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState("");
   const [conflict, setConflict] = useState(false);
   const inFlight = useRef(false);
+  const nameField = useRef<HTMLInputElement>(null);
   useEffect(() => { setReady(true); }, []);
 
   async function refreshPeople() {
@@ -56,6 +58,7 @@ export default function ItemEditor({ path, peoplePath, people, initial }: { path
     } finally { inFlight.current = false; setBusy(false); }
   }
 
+  const selectedKeeper = choices.find(person => person.id === currentKeeper);
   return <section className="card" aria-labelledby="item-editor-heading">
     <h2 id="item-editor-heading">Name and describe this belonging</h2>
     <p id="item-details-help">Describe one object or a set together; no component records are needed. A retained photo, name, and short description make the item complete. You can save either text field unfinished to keep a draft.</p>
@@ -65,7 +68,7 @@ export default function ItemEditor({ path, peoplePath, people, initial }: { path
       <fieldset className="item-fields" disabled={!ready || busy}>
         <legend className="hint">Shared item details</legend>
         <label htmlFor="item-name">Name</label>
-        <input id="item-name" name="name" maxLength={ITEM_NAME_LIMIT} value={name} onChange={event => setName(event.target.value)} aria-describedby="item-name-help" />
+        <input ref={nameField} id="item-name" name="name" maxLength={ITEM_NAME_LIMIT} value={name} onChange={event => setName(event.target.value)} aria-describedby="item-name-help" />
         <p className="hint" id="item-name-help">Up to {ITEM_NAME_LIMIT} characters. Leave blank if you do not know it yet.</p>
         <label htmlFor="item-description">Short description</label>
         <textarea id="item-description" name="description" rows={5} maxLength={ITEM_DESCRIPTION_LIMIT} value={description} onChange={event => setDescription(event.target.value)} aria-describedby="item-description-help" />
@@ -83,10 +86,16 @@ export default function ItemEditor({ path, peoplePath, people, initial }: { path
       </fieldset>
       <p role={progress ? "status" : undefined} aria-live="polite">{progress}</p>
       {error && <p role="alert" className="notice error">{error}</p>}
-      {conflict && <p><a href={path} target="_blank" rel="noopener">Open latest saved item in a new tab</a>. Keep this tab open to copy your attempted text; nothing is automatically merged.</p>}
+      {conflict && <>
+        <p><a href={path} target="_blank" rel="noopener">Open latest saved item in a new tab</a>. Keep this tab open to copy your attempted text; nothing is automatically merged.</p>
+        <ConflictReview kind="item" url={`${path}/details`} attempted={[
+          { label: "Name", value: name }, { label: "Short description", value: description },
+          { label: "Current keeper", value: currentKeeper ? selectedKeeper ? personLabel(selectedKeeper) : "Selected person (refresh choices to view their name)" : "Not recorded" },
+        ]} onReviewed={reviewed => { setVersion(reviewed); setConflict(false); setError(""); setProgress(`You reviewed version ${reviewed}. Revise your fields, then save deliberately; your input is unchanged.`); nameField.current?.focus(); }} />
+      </>}
       <button disabled={!ready || busy || conflict} type="submit">{busy ? "Saving…" : "Save item details"}</button>
     </form>
-    <p className="hint">Online connection required. On errors, your text stays on this open page, not across closing or reloading it. History browsing and richer conflict reconciliation come later.</p>
+    <p className="hint">Online connection required. On errors, your text stays on this open page, not across closing or reloading it. Use the in-page comparison for competing edits. History browsing and preservation across reloads come later.</p>
     <noscript>Editing requires JavaScript so unsuccessful saves can keep your text on this page.</noscript>
   </section>;
 }

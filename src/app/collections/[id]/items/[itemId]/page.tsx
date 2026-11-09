@@ -37,6 +37,8 @@ export default async function Item({ params, searchParams }: { params: Promise<{
         <h3>Recollection from <Link href={`/collections/${id}/people/${story.storyteller.id}`}>{personLabel(story.storyteller)}</Link></h3>
         <p className="story-text">{story.text}</p>
         <p className="hint">Recorded by {story.recorderEmail} on <time dateTime={new Date(story.recordedAt).toISOString()}>{new Date(story.recordedAt).toISOString().slice(0, 10)}</time>. Storyteller credit is separate from who records or edits the text.</p>
+        {story.version > 1 && <p className="hint">Last edited by {story.editorEmail} on <time dateTime={new Date(story.updatedAt).toISOString()}>{new Date(story.updatedAt).toISOString().slice(0, 10)}</time>.</p>}
+        <p><Link href={`${path}/stories/${story.id}`} target="_blank" rel="noopener">Edit this story in a new tab</Link></p>
       </article>)}
     </section>
   </>;

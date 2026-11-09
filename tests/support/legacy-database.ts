@@ -1,7 +1,13 @@
 import type { Client } from "@libsql/client";
 
+export async function removeStoryRevisionsSchema(db: Client) {
+  if (Number((await db.execute("SELECT COUNT(*) AS count FROM story_revisions")).rows[0].count) !== 0) throw new Error("Legacy fixture must have no story revisions.");
+  await db.batch(["DROP TABLE story_revisions", "DELETE FROM schema_migrations WHERE name='0008_story_revisions.sql'"], "write");
+}
+
 export async function removeStoriesSchema(db: Client) {
   if (Number((await db.execute("SELECT COUNT(*) AS count FROM stories")).rows[0].count) !== 0) throw new Error("Legacy fixture must have no stories.");
+  await removeStoryRevisionsSchema(db);
   await db.batch(["DROP TABLE stories", "DELETE FROM schema_migrations WHERE name='0007_attributed_stories.sql'"], "write");
 }
 

@@ -10,7 +10,7 @@ const db = createClient({ url: dbUrl });
 const { signIn, createCollection, invite, accept } = familyJourney(db);
 test.setTimeout(150_000);
 test.beforeEach(async ({ request }) => {
-  await db.batch(["stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["story_revisions", "stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
   expect((await post(request, "/collections/prewarm/items/prewarm/stories", {})).status()).toBe(401);
   expect((await post(request, "/collections/prewarm/members/prewarm", {})).status()).toBe(303);
@@ -264,7 +264,7 @@ test("version-six upgrade preserves populated files, keeper history and sessions
   expect((await record(page.request, item.path, storyteller)).status()).toBe(200);
   const saved = await rows();
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
-  expect(await rows()).toEqual(saved); expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(7);
+  expect(await rows()).toEqual(saved); expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(8);
   const photo = await page.request.get(item.path + "/photo"); expect(photo.ok()).toBe(true); expect(photo.headers()["content-type"]).toBe("image/jpeg");
 });
 

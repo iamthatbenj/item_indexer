@@ -10,7 +10,7 @@ const db = createClient({ url: dbUrl });
 const { signIn, createCollection, invite, accept } = familyJourney(db);
 test.setTimeout(150_000);
 test.beforeEach(async ({ request }) => {
-  await db.batch(["stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(["story_revisions", "stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
   // Finish first-use development handler compilation before app pages open.
   expect((await post(request, "/collections/prewarm/people/records", {})).status()).toBe(401);
@@ -375,7 +375,7 @@ test("version-five upgrade preserves populated items, photos, sessions and revis
   expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0);
   await page.goto(item.path); await expect(page.getByRole("heading", { name: "Blue bowl", exact: true })).toBeVisible();
   const keeper = await person(page.request, item.collection); expect((await itemEdit(page.request, item.path, "2", keeper.id)).status()).toBe(200);
-  expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(7);
+  expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(8);
 });
 
 test("long identifying details remain escaped, labelled and usable by keyboard on mobile without horizontal overflow", async ({ page }) => {

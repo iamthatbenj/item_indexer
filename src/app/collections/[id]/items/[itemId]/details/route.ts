@@ -1,6 +1,20 @@
 import { currentAccount } from "@/server/auth";
 import { formPost } from "@/server/http";
-import { editItem, ItemEditError } from "@/server/items";
+import { editItem, getItem, ItemEditError } from "@/server/items";
+import { personLabel } from "@/shared/people";
+
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string; itemId: string }> }) {
+  const headers = { "Cache-Control": "private, no-store" };
+  const account = await currentAccount();
+  if (!account) return Response.json({ error: "Sign in to compare saved details." }, { status: 401, headers });
+  const { id, itemId } = await params;
+  const item = await getItem(account.id, id, itemId);
+  if (!item) return Response.json({ error: "This item is unavailable." }, { status: 404, headers });
+  return Response.json({ current: { version: item.version, fields: [
+    { label: "Name", value: item.name }, { label: "Short description", value: item.description },
+    { label: "Current keeper", value: item.currentKeeper ? personLabel(item.currentKeeper) : "Not recorded" },
+  ] } }, { headers });
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string; itemId: string }> }) {
   return formPost(request, async form => {
