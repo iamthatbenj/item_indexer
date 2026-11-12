@@ -27,6 +27,7 @@ export default async function Item({ params, searchParams }: { params: Promise<{
     {item.description && <p className="item-description">{item.description}</p>}
     <p className="keeper-summary">Current keeper: {item.currentKeeper ? <><Link href={`/collections/${id}/people/${item.currentKeeper.id}`}>{item.currentKeeper.name}</Link>{item.currentKeeper.note ? ` — ${item.currentKeeper.note}` : ""}</> : "Not recorded"}. Keeping an item does not establish legal ownership.</p>
     <ItemPhotos collectionId={id} itemId={itemId} name={item.name} photos={item.photos} />
+    <p><Link href={`${path}/history`} target="_blank" rel="noopener">Inspect item edit history in a new tab</Link> without losing unsaved details.</p>
     <ItemEditor key={item.id} path={path} peoplePath={`/collections/${id}/people`} people={people} initial={{ name: item.name, description: item.description, version: item.version, currentKeeperId: item.currentKeeper?.id ?? "" }} />
     <section aria-labelledby="stories-heading">
       <h2 id="stories-heading">Stories</h2>
@@ -38,7 +39,7 @@ export default async function Item({ params, searchParams }: { params: Promise<{
         <p className="story-text">{story.text}</p>
         <p className="hint">Recorded by {story.recorderEmail} on <time dateTime={new Date(story.recordedAt).toISOString()}>{new Date(story.recordedAt).toISOString().slice(0, 10)}</time>. Storyteller credit is separate from who records or edits the text.</p>
         {story.version > 1 && <p className="hint">Last edited by {story.editorEmail} on <time dateTime={new Date(story.updatedAt).toISOString()}>{new Date(story.updatedAt).toISOString().slice(0, 10)}</time>.</p>}
-        <p><Link href={`${path}/stories/${story.id}`} target="_blank" rel="noopener">Edit this story in a new tab</Link></p>
+        <p><Link href={`${path}/stories/${story.id}`} target="_blank" rel="noopener">Edit this story in a new tab</Link> · <Link href={`${path}/stories/${story.id}/history`} target="_blank" rel="noopener">Inspect story edit history in a new tab</Link></p>
       </article>)}
     </section>
   </>;

@@ -47,7 +47,7 @@ export default function StoryEditor({ path, initial }: { path: string; initial: 
       </>}
       <button type="submit" disabled={!ready || busy || conflict}>{busy ? "Saving…" : "Save story changes"}</button>
     </form>
-    <p className="hint">Online connection required. Failed saves and comparison keep text only while this page stays open. Reload/closed-tab recovery and history browsing come later.</p>
+    <p className="hint">Online connection required. Failed saves and comparison keep text only while this page stays open. Open history in a separate tab to inspect or recover earlier content. Reload/closed-tab recovery comes later.</p>
     <noscript>Editing requires JavaScript so unsuccessful saves can preserve your attempted story.</noscript>
   </section>;
 }

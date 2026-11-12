@@ -29,7 +29,7 @@ The contributor can close/reload the comparison, continue editing their draft or
 
 Comparison fetch failures, lost connections, revoked access and malformed responses keep the draft and previous version. They do not enable saving based on an unread/invalid snapshot. A lost successful-edit acknowledgement leaves the attempted text; retrying the old version conflicts, and explicit review can confirm the already-saved content without manufacturing another revision on a no-op.
 
-All preservation is **in-page only**. Reloading/closing the page or ordinarily navigating away is not interruption recovery. Copy valuable text before doing that. Reconciliation stays on the original editor, and its latest-record inspection links open separately. There is no history browser, automatic semantic merge, offline editing or local draft storage in this slice. Person identifying-detail conflicts retain #9's separate-tab workflow; the new comparison applies to item details and stories.
+All preservation is **in-page only**. Reloading/closing the page or ordinarily navigating away is not interruption recovery. Copy valuable text before doing that. Reconciliation stays on the original editor, and its latest-record inspection links open separately. There is no history browser, automatic semantic merge, offline editing or local draft storage in this slice. [#12 adds member-visible history and deliberate earlier-content recovery](edit-history.md) using these same editors and safety checks. Person identifying-detail conflicts retain #9's separate-tab workflow; the new comparison applies to item details and stories.
 
 ## Public boundaries
 
@@ -43,7 +43,7 @@ JSON comparison responses are private/no-store. Anonymous comparison/edit reques
 
 ## Preservation and scope
 
-No PDF/portable archive is implemented yet. Future preservation outputs/restores must carry current story identity/item/text/version, original recording and current editing metadata, stable revision IDs and ordering, all superseded text and attribution fields, and the Person versions needed to resolve storyteller credit. Item revisions retain name/description/state, keeper identity/assignment version and editing identity as before. Reapplying prior text in the future must create a new attributed version, not rewrite history. Removal/export work must exclude deletion-bin content and historical payloads exposing it; operational backups remain separate.
+No PDF/portable archive is implemented yet. Future preservation outputs/restores must carry current story identity/item/text/version, original recording and current editing metadata, stable revision IDs and ordering, all superseded text and attribution fields, and the Person versions needed to resolve storyteller credit. Item revisions retain name/description/state, keeper identity/assignment version and editing identity as before. Reapplying prior text through [#12 history recovery](edit-history.md) creates a new attributed version, not rewritten history. Removal/export work must exclude deletion-bin content and historical payloads exposing it; operational backups remain separate.
 
 No photos/files, private R2 credentials/authorization, optimization or metadata-retention policy change. No genealogy, Person/account association, story reattribution UI, verification flag, cost cap, backup or transfer machinery is added. Persistent interruption recovery remains its own slice.
 
@@ -63,7 +63,7 @@ The 12 dedicated tests use independent real browser sessions and isolated real l
 
 ## Production rollout and rollback — approval still required
 
-Local implementation only. Production migration #8, deployment and hosted acceptance have **not** been performed for #11. Explicitly apply `0008_story_revisions.sql` using the protected production procedure **before an auto-deploying push**. No new secrets/resources/bucket settings or photo-capture pause are needed. The #10 application remains compatible during the additive migration/deployment interval. Never edit applied migration checksums or drop retained history to roll back.
+The operator confirmed production migration #8, Vercel deployment of #11 and successful requested hosted checks; #11 is closed. This is operator-reported acceptance, not independent verification of every manual check below. For future environments, explicitly apply `0008_story_revisions.sql` using the protected production procedure **before an auto-deploying push**. No new secrets/resources/bucket settings or photo-capture pause are needed. The #10 application remains compatible during the additive migration/deployment interval. Never edit applied migration checksums or drop retained history to roll back.
 
 Prefer compatible fix-forward. Application rollback to #10 hides story editing and in-page comparisons but preserves current edited stories, recorded attribution and prior-version rows. Existing #10 story creation/retries do not overwrite edited stories. Keep the added table/data intact for forward deployment. Older keeper/photo rollback caveats still apply to older targets. Application rollback is not database recovery, and backup/recovery acceptance remains separate; the pilot must not be the sole family record.
 

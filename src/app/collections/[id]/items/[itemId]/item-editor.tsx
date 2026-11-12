@@ -95,7 +95,7 @@ export default function ItemEditor({ path, peoplePath, people, initial }: { path
       </>}
       <button disabled={!ready || busy || conflict} type="submit">{busy ? "Saving…" : "Save item details"}</button>
     </form>
-    <p className="hint">Online connection required. On errors, your text stays on this open page, not across closing or reloading it. Use the in-page comparison for competing edits. History browsing and preservation across reloads come later.</p>
+    <p className="hint">Online connection required. On errors, your text stays on this open page, not across closing or reloading it. Use the in-page comparison for competing edits. Open history in a separate tab to inspect or recover earlier content. Preservation across reloads comes later.</p>
     <noscript>Editing requires JavaScript so unsuccessful saves can keep your text on this page.</noscript>
   </section>;
 }
