@@ -41,7 +41,7 @@ Recovery saves use existing exact-Origin bounded forms, server-side content/refe
 
 No new schema, persistent fields, files, credentials, provider resources or membership grants are introduced. Future portable archives must preserve stable item/story/revision/Person/account identities, chronological versions, text/state/keeper references, original recording and editing provenance, and the Person identifying versions needed to resolve historical labels. Preserve attribution data without requiring login to or restored access for old accounts. Existing #9–#11 preservation requirements remain; no portable output has shipped yet.
 
-No migration is required beyond the already deployed schema #8. Local implementation only; #12 has not been pushed/deployed or accepted on the hosted pilot. No production operation is authorized by this work. An application rollback to #11 hides history/recovery forms but retains all edits and revisions; keep the schema/data intact and prefer compatible fix-forward.
+No migration is required beyond the already deployed schema #8. With operator approval, reviewed commit `f3d74cd` was pushed to main and Vercel reported successful deployment. The operator then reported successful hosted acceptance and requested closing #12. This is operator-reported authenticated acceptance, not independent agent verification of every manual check. An application rollback to #11 hides history/recovery forms but retains all edits and revisions; keep the schema/data intact and prefer compatible fix-forward.
 
 ## Verification
 

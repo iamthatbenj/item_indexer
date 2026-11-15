@@ -244,6 +244,8 @@ test("populated version-seven upgrade retains story attribution, files and sessi
   const item = await family(page);
   const tables = ["stories", "items", "item_photos", "people", "sessions", "memberships", "accounts"];
   const before = await Promise.all(tables.map(async table => (await db.execute(`SELECT * FROM ${table}`)).rows));
+  // Quiesce browser capture reads before this out-of-process schema fixture.
+  await page.goto("/");
   await removeStoryRevisionsSchema(db); await db.execute("CREATE TABLE story_revisions (marker TEXT)");
   try {
     expect(() => execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv })).toThrow();

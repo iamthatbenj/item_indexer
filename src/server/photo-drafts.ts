@@ -30,8 +30,15 @@ export async function beginPhotoDraft(accountId: string, collectionId: string, i
     if (existing) {
       if (existing.account_id !== accountId || existing.collection_id !== collectionId || existing.target_item_id !== targetItemId || Number(existing.input_bytes) !== size) throw new PhotoDraftError("This upload is unavailable. Select the photo again.", 404);
       if (existing.state === "saved") return { saved: true, expiresAt: 0 };
-      if (Number(existing.expires_at) <= now) throw new PhotoDraftError("This upload expired. Select the photo again.", 410);
       if (existing.state === "processing" && Number(existing.lease_until) > now) throw new PhotoDraftError("This photo is still being processed. Wait a moment, then retry.", 409);
+      if (Number(existing.expires_at) <= now) {
+        // Renew the SAME operation after interruption; never turn uncertain
+        // success into a new item. Saved intents were reconciled above, and a
+        // live processing lease must not be replaced even after URL expiry.
+        const expiresAt = now + 15 * 60_000;
+        await tx.execute({ sql: "UPDATE photo_uploads SET state='pending', expires_at=?, lease_until=NULL, attempt=NULL WHERE id=?", args: [expiresAt, id] });
+        return { saved: false, expiresAt };
+      }
       return { saved: false, expiresAt: Number(existing.expires_at) };
     }
     const expiresAt = now + 15 * 60_000;
@@ -53,7 +60,7 @@ export async function finishPhotoDraft(accountId: string, collectionId: string, 
     if (!row) throw new PhotoDraftError("This upload is unavailable.", 404);
     if (row.state === "saved") return { saved: true, size: 0 };
     const now = Date.now();
-    if (Number(row.expires_at) <= now) throw new PhotoDraftError("This upload expired. Select the photo again.", 410);
+    if (Number(row.expires_at) <= now) throw new PhotoDraftError("This upload authorization expired. Retry save to renew the same pending photo.", 410);
     if (!await allow(tx, `photo:finish:${accountId}`, 30, now)) throw new PhotoDraftError("Processing request limit reached. Wait 15 minutes before trying again.", 429);
     const active = await tx.execute({ sql: "SELECT 1 FROM photo_uploads WHERE state='processing' AND lease_until>? LIMIT 1", args: [now] });
     if (active.rows.length) throw new PhotoDraftError("A photo is still being processed. Wait a moment, then retry.", 409);

@@ -351,6 +351,8 @@ test("lost person creation and edit acknowledgements preserve attempted details 
 
 test("version-five upgrade preserves populated items, photos, sessions and revisions and rolls back a late failure before rerun", async ({ page }) => {
   const item = await family(page);
+  // Quiesce browser capture reads before this out-of-process schema fixture.
+  await page.goto("/");
   expect((await itemEdit(page.request, item.path, "1", "")).status()).toBe(200);
   const photos = (await db.execute("SELECT id, item_id, photo_key, thumbnail_key, sha256 FROM item_photos")).rows;
   const accounts = (await db.execute("SELECT id, email FROM accounts")).rows;

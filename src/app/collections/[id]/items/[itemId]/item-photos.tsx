@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import PhotoCapture from "../../photo-capture";
 
 type Photo = { id: string; width: number; height: number };
-export default function ItemPhotos({ collectionId, itemId, name, photos }: { collectionId: string; itemId: string; name: string; photos: Photo[] }) {
+export default function ItemPhotos({ accountId, collectionId, itemId, name, photos }: { accountId: string; collectionId: string; itemId: string; name: string; photos: Photo[] }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [refreshing, startTransition] = useTransition();
@@ -38,6 +38,6 @@ export default function ItemPhotos({ collectionId, itemId, name, photos }: { col
         </figcaption>
       </figure>)}
     </div>
-    <PhotoCapture collectionId={collectionId} itemId={itemId} onSaved={refresh} />
+    <PhotoCapture accountId={accountId} collectionId={collectionId} itemId={itemId} itemName={name} onSaved={refresh} />
   </section>;
 }

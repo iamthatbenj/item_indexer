@@ -7,6 +7,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return formPost(request, async form => {
     const account = await currentAccount();
     if (!account) return Response.json({ error: "Sign in again before saving your photo." }, { status: 401 });
+    if (form.has("accountId") && form.get("accountId") !== account.id) return Response.json({ error: "The signed-in account changed. Sign in as the original contributor before resuming this photo." }, { status: 409 });
     const { id } = await params;
     try {
       return Response.json(await beginPhotoDraft(account.id, id, form.get("id") ?? "", Number(form.get("size"))), { headers: { "Cache-Control": "no-store" } });

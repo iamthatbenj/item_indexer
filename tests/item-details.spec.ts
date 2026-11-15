@@ -246,6 +246,8 @@ async function insert(table: string, row: Row) {
 
 test("migration upgrades populated version-three records without changing photo relationships, access or capture", async ({ page }) => {
   const item = await family(page);
+  // Quiesce browser capture reads before this out-of-process schema fixture.
+  await page.goto("/");
   const memberships = (await db.execute("SELECT * FROM memberships")).rows;
   const sessions = (await db.execute("SELECT * FROM sessions")).rows;
   const oldItem = (await db.execute("SELECT id, collection_id, created_by, created_at, status FROM items")).rows[0];
@@ -273,6 +275,7 @@ test("migration upgrades populated version-three records without changing photo 
   await page.goto(item.path); await save(page, "Existing belonging", "A photo captured before this migration.");
   expect((await revisions(item.id))[0].edited_by).toBe(oldItem.created_by);
   const beforeRerun = await current(item.id); const history = await revisions(item.id);
+  await page.goto("/");
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
   expect(await current(item.id)).toEqual(beforeRerun); expect(await revisions(item.id)).toEqual(history);
   expect((await page.request.get(item.path + "/photo")).status()).toBe(200);

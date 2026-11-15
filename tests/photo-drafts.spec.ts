@@ -100,10 +100,12 @@ test("a lost save acknowledgement retries through the browser without duplicatin
   expect((await db.execute("SELECT * FROM items")).rows).toHaveLength(1);
 });
 
-test("an expired browser selection can reselect the same file and save a fresh draft", async ({ page }) => {
+test("an expired browser selection retries the same pending operation without a fresh draft intent", async ({ page }) => {
   await family(page);
   const input = page.getByLabel("Choose from your photo library", { exact: true });
-  await expect(input).toBeEnabled();
+  // Native-form navigation can display SSR controls before client hydration.
+  // Match the navigation-scale readiness allowance used by the camera checks.
+  await expect(input).toBeEnabled({ timeout: 30_000 });
   await input.setInputFiles(`${fixtures}/small.png`);
   // Expire the selected intent immediately after issuance through the real UI.
   await page.route("**/photo-uploads", async route => {
@@ -112,13 +114,14 @@ test("an expired browser selection can reselect the same file and save a fresh d
     await route.fulfill({ response });
   }, { times: 1 });
   await page.getByRole("button", { name: "Save photo draft", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Capture a belonging" }).getByRole("alert")).toContainText("Select the photo again");
+  await expect(page.getByRole("region", { name: "Capture a belonging" }).getByRole("alert")).toContainText("Retry save");
   expect((await db.execute("SELECT * FROM items")).rows).toHaveLength(0);
+  const original = (await db.execute("SELECT id FROM photo_uploads")).rows[0].id;
   await expect(input).toHaveValue("");
-  await input.setInputFiles(`${fixtures}/small.png`);
-  await page.getByRole("button", { name: "Save photo draft", exact: true }).click();
+  await page.getByRole("button", { name: "Retry save", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Untitled belonging", exact: true })).toBeVisible();
-  expect((await db.execute("SELECT * FROM items")).rows).toHaveLength(1);
+  expect((await db.execute("SELECT id FROM items")).rows.map(row => row.id)).toEqual([original]);
+  expect((await db.execute("SELECT id FROM photo_uploads")).rows.map(row => row.id)).toEqual([original]);
 });
 
 test("retained large image is bounded, detailed, metadata-free and linked to real private objects", async ({ page }) => {
@@ -333,7 +336,7 @@ test("missing or size-mismatched staged files are not published and remain retry
   expect((await post(page.request, finish, {})).status()).toBe(200);
 });
 
-test("stale processing leases recover, live leases prevent competing work, and expired uploads need a fresh selection", async ({ page }) => {
+test("stale processing leases recover, live leases prevent competing work, and expired finish requires renewed authorization", async ({ page }) => {
   const collection = await family(page);
   const upload = await start(page.request, collection, await readFile(`${fixtures}/small.png`));
   await db.execute({ sql: "UPDATE photo_uploads SET state='processing', attempt=?, lease_until=? WHERE id=?", args: [randomUUID(), Date.now() + 60_000, upload.id] });
@@ -361,6 +364,8 @@ test("bounded upload forms reject foreign origins, invalid sizes, oversize bodie
 
 test("photo migration upgrades a version-two database without changing collections, memberships or sessions", async ({ page }) => {
   const collection = await family(page);
+  // Quiesce browser capture reads before this out-of-process schema fixture.
+  await page.goto("/");
   const before = (await db.execute("SELECT * FROM memberships")).rows;
   await removePeopleSchema(db);
   for (const table of ["item_revisions", "photo_uploads", "item_photos", "items"]) await db.execute(`DROP TABLE ${table}`);

@@ -26,7 +26,7 @@ export default async function Item({ params, searchParams }: { params: Promise<{
     <p role="status" className="notice">{query.storySaved === "1" ? "Story recorded. " : query.saved === "1" ? "Item details saved. " : ""}{item.status === "complete" ? "Complete with a photo, name, and short description. Visible to this collection’s members." : `Saved with ${item.photos.length === 1 ? "one photo" : `${item.photos.length} photos`}. This draft is visible to this collection’s members.`}</p>
     {item.description && <p className="item-description">{item.description}</p>}
     <p className="keeper-summary">Current keeper: {item.currentKeeper ? <><Link href={`/collections/${id}/people/${item.currentKeeper.id}`}>{item.currentKeeper.name}</Link>{item.currentKeeper.note ? ` — ${item.currentKeeper.note}` : ""}</> : "Not recorded"}. Keeping an item does not establish legal ownership.</p>
-    <ItemPhotos collectionId={id} itemId={itemId} name={item.name} photos={item.photos} />
+    <ItemPhotos key={`${account.id}:${id}:${itemId}`} accountId={account.id} collectionId={id} itemId={itemId} name={item.name} photos={item.photos} />
     <p><Link href={`${path}/history`} target="_blank" rel="noopener">Inspect item edit history in a new tab</Link> without losing unsaved details.</p>
     <ItemEditor key={item.id} path={path} peoplePath={`/collections/${id}/people`} people={people} initial={{ name: item.name, description: item.description, version: item.version, currentKeeperId: item.currentKeeper?.id ?? "" }} />
     <section aria-labelledby="stories-heading">

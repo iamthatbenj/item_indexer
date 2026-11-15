@@ -8,7 +8,7 @@ The item page shows its active photos, with labelled full-size links and removal
 
 The existing camera/library component also adds one additional view at a time. Every image follows exactly the original [private staging, actual-content validation and bounded processing](photo-drafts.md) path: at most 20 MiB input, supported static JPEG/PNG/WebP, max 60 MP/16,000-pixel sides, correct orientation, sRGB, hidden metadata stripping, max 3,200-pixel retained JPEG without upscaling, and a max-480-pixel thumbnail. Preupload retention/format disclosure remains visible. Existing per-account/global upload and processing limits apply to both capture and additions, without a separate extra allowance.
 
-Photo actions refresh server-rendered views without navigating away from the item or discarding its editor's unsaved text. The editor retains the version paired with that text even if a photo refresh delivers newer item props. If another member edited meanwhile, saving the original text still receives a conflict instead of silently adopting the newer version. Image selection/retry preservation is still in-page only, not offline or across reloads.
+Photo actions refresh server-rendered views without navigating away from the item or discarding its editor's unsaved text. The editor retains the version paired with that text even if a photo refresh delivers newer item props. If another member edited meanwhile, saving the original text still receives a conflict instead of silently adopting the newer version. Image selection/retry preservation in #8 was in-page only; [#13 adds locally retained pending photos and explicit retry across reloads](pending-photos.md), without promising full offline support.
 
 ## Routes and authorization
 

@@ -5,9 +5,10 @@ import { finishPhotoDraft, PhotoDraftError } from "@/server/photo-drafts";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export async function POST(request: Request, { params }: { params: Promise<{ id: string; itemId: string; uploadId: string }> }) {
-  return formPost(request, async () => {
+  return formPost(request, async form => {
     const account = await currentAccount();
     if (!account) return Response.json({ error: "Sign in again before saving your photo." }, { status: 401 });
+    if (form.has("accountId") && form.get("accountId") !== account.id) return Response.json({ error: "The signed-in account changed. Sign in as the original contributor before resuming this photo." }, { status: 409 });
     const { id, itemId, uploadId } = await params;
     try {
       return Response.json(await finishPhotoDraft(account.id, id, uploadId, itemId), { headers: { "Cache-Control": "no-store" } });

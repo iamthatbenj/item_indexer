@@ -250,6 +250,8 @@ test("version-six upgrade preserves populated files, keeper history and sessions
   expect((await post(page.request, item.path + "/details", { version: "1", name: "Bowl", description: "Blue ceramic bowl.", currentKeeper: storyteller })).status()).toBe(200);
   const tables = ["items", "item_revisions", "item_photos", "people", "person_revisions", "sessions", "accounts", "memberships"];
   const before = await Promise.all(tables.map(async table => (await db.execute(`SELECT * FROM ${table}`)).rows));
+  // Quiesce browser capture reads before this out-of-process schema fixture.
+  await page.goto("/");
   await removeStoriesSchema(db);
   await db.execute("CREATE INDEX stories_item ON collections(name)");
   try {
@@ -263,6 +265,7 @@ test("version-six upgrade preserves populated files, keeper history and sessions
   await page.goto(item.path); await expect(page.locator(".keeper-summary")).toContainText("Sam");
   expect((await record(page.request, item.path, storyteller)).status()).toBe(200);
   const saved = await rows();
+  await page.goto("/");
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
   expect(await rows()).toEqual(saved); expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(8);
   const photo = await page.request.get(item.path + "/photo"); expect(photo.ok()).toBe(true); expect(photo.headers()["content-type"]).toBe("image/jpeg");

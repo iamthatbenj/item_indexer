@@ -308,6 +308,9 @@ test("additional-photo forms enforce origin, body bounds, confirmation, expiry a
 
 test("populated version-four upgrade preserves photos, text revisions and sessions, rolls back failures and remains rerunnable", async ({ page }) => {
   const item = await family(page);
+  // This fixture rebuilds live tables outside the application. Leave capture
+  // first so identity/preview reads cannot race the synthetic schema swap.
+  await page.goto("/");
   await post(page.request, item.path + "/details", { version: "1", name: "Existing name", description: "Existing description" });
   const original = (await photos(item))[0];
   const legacyPhoto = Object.fromEntries(Object.entries(original).filter(([key]) => !["created_by", "removed_at", "removed_by"].includes(key)));
