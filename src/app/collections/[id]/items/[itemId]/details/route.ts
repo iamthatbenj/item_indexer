@@ -20,6 +20,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return formPost(request, async form => {
     const account = await currentAccount();
     if (!account) return Response.json({ error: "Sign in again before saving. Keep this page open to copy your text." }, { status: 401 });
+    if (form.getAll("accountId").length > 1 || form.has("accountId") && form.get("accountId") !== account.id) return Response.json({ error: "The signed-in account changed. Sign in as the original contributor before saving pending text." }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
     const { id, itemId } = await params;
     try {
       // Never accept a client-declared status, photo, revision, or editor identity.

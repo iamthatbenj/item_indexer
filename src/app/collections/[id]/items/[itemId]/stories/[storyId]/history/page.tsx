@@ -26,7 +26,7 @@ export default async function StoryHistory({ params, searchParams }: {
     {selected && <section aria-labelledby="recovery-heading">
       <h2 id="recovery-heading">Recover story version {selected.version} as a new edit</h2>
       <p className="notice">Review the earlier text below, then use Save story changes deliberately. Saving checks current version {current.version}, keeps storyteller and recording credit unchanged, and retains later history. It cannot restore removed records or collection access.</p>
-      <StoryEditor key={selected.version} path={path} initial={{ text: selected.text, version: current.version }} />
+      <StoryEditor key={`${account.id}:${storyId}:${selected.version}`} scope={{ accountId: account.id, collectionId: id, itemId }} storyId={storyId} path={path} initial={{ text: selected.text, version: current.version }} />
     </section>}
     <section aria-label="Story versions">
       {history.map(entry => <article key={entry.version} className="card edit-history" aria-label={`Story version ${entry.version}`}>

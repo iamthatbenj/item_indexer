@@ -27,7 +27,7 @@ Opening history or a recovery form writes nothing. The recovery page displays al
 - Concurrent/intervening edits cause the existing 409 comparison/reconciliation flow; earlier fields remain editable/copyable. Only explicit review advances the expected version. Another intervening change conflicts again.
 - Failed saves retain attempted fields on the open page. Lost-success acknowledgements conflict on retry; comparison followed by a same-content save creates no duplicate revision.
 
-This is not database rollback, destructive history rewriting, a semantic merge, photo restoration or interruption persistence. Reloading/closing a recovery form can lose unsaved input. Keep it open or copy valuable text.
+This is not database rollback, destructive history rewriting, a semantic merge or photo restoration. [#14 adds account-scoped local pending-text recovery](pending-text.md) to these same editors; it remains subject to browser eviction/failed writes, requires fresh identity and deliberate comparison, and cannot restore missing records. Copy valuable text separately.
 
 ## Authorization and future removal boundary
 

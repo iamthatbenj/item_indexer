@@ -29,7 +29,7 @@ export default async function ItemHistory({ params, searchParams }: {
     {selected && <section aria-labelledby="recovery-heading">
       <h2 id="recovery-heading">Recover item version {selected.version} as a new edit</h2>
       <p className="notice">Review the earlier fields below, then use Save item details deliberately. Saving checks current version {current.version}; it does not erase later history or restore photos, access, or removed records. Current keeper choices use today's names. A changed assignment records today's identifying version.</p>
-      <ItemEditor key={selected.version} path={path} peoplePath={`/collections/${id}/people`} people={people!} initial={{ name: selected.name, description: selected.description, currentKeeperId: selected.currentKeeperId, version: current.version }} />
+      <ItemEditor key={`${account.id}:${itemId}:${selected.version}`} scope={{ accountId: account.id, collectionId: id, itemId }} path={path} peoplePath={`/collections/${id}/people`} people={people!} initial={{ name: selected.name, description: selected.description, currentKeeperId: selected.currentKeeperId, version: current.version }} />
     </section>}
     <section aria-label="Item versions">
       {history.map(entry => <article key={entry.version} className="card edit-history" aria-label={`Item version ${entry.version}`}>

@@ -16,6 +16,7 @@ export async function POST(request: Request, { params }: Context) {
   return formPost(request, async form => {
     const account = await currentAccount();
     if (!account) return Response.json({ error: "Sign in again before saving. Keep your attempted story on this page." }, { status: 401, headers });
+    if (form.getAll("accountId").length > 1 || form.has("accountId") && form.get("accountId") !== account.id) return Response.json({ error: "The signed-in account changed. Sign in as the original contributor before saving pending text." }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
     const { id, itemId, storyId } = await params;
     try {
       for (const field of ["version", "text"]) if (form.getAll(field).length !== 1) throw new StoryError("Submit one editing version and story text.");

@@ -28,7 +28,7 @@ export default async function Item({ params, searchParams }: { params: Promise<{
     <p className="keeper-summary">Current keeper: {item.currentKeeper ? <><Link href={`/collections/${id}/people/${item.currentKeeper.id}`}>{item.currentKeeper.name}</Link>{item.currentKeeper.note ? ` — ${item.currentKeeper.note}` : ""}</> : "Not recorded"}. Keeping an item does not establish legal ownership.</p>
     <ItemPhotos key={`${account.id}:${id}:${itemId}`} accountId={account.id} collectionId={id} itemId={itemId} name={item.name} photos={item.photos} />
     <p><Link href={`${path}/history`} target="_blank" rel="noopener">Inspect item edit history in a new tab</Link> without losing unsaved details.</p>
-    <ItemEditor key={item.id} path={path} peoplePath={`/collections/${id}/people`} people={people} initial={{ name: item.name, description: item.description, version: item.version, currentKeeperId: item.currentKeeper?.id ?? "" }} />
+    <ItemEditor key={`${account.id}:${item.id}`} scope={{ accountId: account.id, collectionId: id, itemId }} path={path} peoplePath={`/collections/${id}/people`} people={people} initial={{ name: item.name, description: item.description, version: item.version, currentKeeperId: item.currentKeeper?.id ?? "" }} />
     <section aria-labelledby="stories-heading">
       <h2 id="stories-heading">Stories</h2>
       <p>Separate recollections may disagree; none is automatically the verified account.</p>

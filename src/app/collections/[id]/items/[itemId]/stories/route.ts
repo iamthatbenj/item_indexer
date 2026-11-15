@@ -7,6 +7,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return formPost(request, async form => {
     const account = await currentAccount();
     if (!account) return Response.json({ error: "Sign in again before recording. Keep this page open to copy your story." }, { status: 401, headers });
+    if (form.getAll("accountId").length > 1 || form.has("accountId") && form.get("accountId") !== account.id) return Response.json({ error: "The signed-in account changed. Sign in as the original contributor before saving pending text." }, { status: 409, headers: { "Cache-Control": "private, no-store" } });
     const { id, itemId } = await params;
     try {
       for (const field of ["id", "storyteller", "text"]) if (form.getAll(field).length !== 1) throw new StoryError("Submit one recording request, storyteller, and story text.");

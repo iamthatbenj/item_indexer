@@ -11,7 +11,8 @@ import { removePeopleSchema } from "./support/legacy-database";
 import { familyJourney, dbUrl, outbox, origin, post, operatorEnv } from "./support/family";
 import { testStorage } from "./support/storage";
 
-const db = createClient({ url: dbUrl });
+// Direct fixture writes share this file with live application reads.
+const db = createClient({ url: dbUrl, timeout: 5000 });
 const { signIn, createCollection, invite, accept } = familyJourney(db);
 const fixtures = resolve("tests/fixtures/photos");
 let storage: ReturnType<typeof testStorage>;
@@ -20,6 +21,10 @@ test.setTimeout(90_000);
 test.beforeEach(async () => {
   await db.batch(["story_revisions", "stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
+});
+test.afterEach(async ({ page }) => {
+  // Drain retained-image requests before the next fixture replaces their rows.
+  await expect.poll(() => page.locator("img").evaluateAll((images: HTMLImageElement[]) => images.every(image => image.complete))).toBe(true);
 });
 test.afterAll(() => { db.close(); storage.client.destroy(); });
 

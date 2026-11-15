@@ -45,7 +45,7 @@ button:disabled { opacity: .65; cursor: wait; }
 .draft-grid { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(12rem, 100%), 1fr)); gap: 1.5rem; }
 .draft-grid img { display: block; width: 100%; height: 12rem; object-fit: contain; background: var(--paper); }
 .draft-grid a { display: block; overflow-wrap: anywhere; }
-.pending-photos, .selected-photo { overflow-wrap: anywhere; }
+.pending-photos, .selected-photo, .pending-text { overflow-wrap: anywhere; }
 .pending-photos { padding-left: 1.2rem; }
 .pending-photos li { margin-bottom: 1rem; }
 .item-fields { border: 0; padding: 0; margin: 0; min-width: 0; }

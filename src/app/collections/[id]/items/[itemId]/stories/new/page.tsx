@@ -18,6 +18,6 @@ export default async function NewStory({ params }: { params: Promise<{ id: strin
     <Link href={path}>← Back to item</Link>
     <h1>Record a story</h1>
     <p>About {item.name || "this untitled belonging"}. Credit the person whose recollection this is, even if you are entering it for them.</p>
-    <StoryRecorder path={path} peoplePath={`/collections/${id}/people`} people={people} />
+    <StoryRecorder key={`${account.id}:${itemId}`} scope={{ accountId: account.id, collectionId: id, itemId }} path={path} peoplePath={`/collections/${id}/people`} people={people} />
   </>;
 }

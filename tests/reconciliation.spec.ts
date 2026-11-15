@@ -182,6 +182,9 @@ test("failed or malformed comparisons and closing review never advance versions 
   const item = await family(page); await openStory(page, item.story); await page.getByLabel("Story", { exact: true }).fill("My preserved draft.");
   expect((await storyEdit(page.request, item.story, "1", "Saved competitor.")).status()).toBe(200);
   await page.getByRole("button", { name: "Save story changes", exact: true }).click();
+  // Local retention/account preflight precede the POST. Install the one-use
+  // malformed-GET interceptor only after that stale POST has completed.
+  await expect(page.getByRole("button", { name: "Compare with latest saved story", exact: true })).toBeVisible();
   for (const body of ["{}", JSON.stringify({ current: { version: 2, fields: [] } })]) {
     await page.route("**/details", async route => { if (route.request().method() === "GET") { await route.fetch(); await route.fulfill({ status: 200, contentType: "application/json", body }); } else await route.continue(); }, { times: 1 });
     await page.getByRole("button", { name: "Compare with latest saved story", exact: true }).click();

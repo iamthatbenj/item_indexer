@@ -19,6 +19,6 @@ export default async function EditStory({ params, searchParams }: { params: Prom
     <p className="story-attribution">Storyteller: <Link href={`/collections/${id}/people/${story.storyteller.id}`}>{personLabel(story.storyteller)}</Link>. Editing the text does not change storyteller credit.</p>
     <p className="story-attribution">Originally recorded by {story.recorderEmail}. Last edited by {story.editorEmail}.</p>
     <p><Link href={`${path}/history`} target="_blank" rel="noopener">Inspect story edit history in a new tab</Link> without losing unsaved story text.</p>
-    <StoryEditor key={story.id} path={path} initial={{ text: story.text, version: story.version }} />
+    <StoryEditor key={`${account.id}:${story.id}`} scope={{ accountId: account.id, collectionId: id, itemId }} storyId={storyId} path={path} initial={{ text: story.text, version: story.version }} />
   </>;
 }

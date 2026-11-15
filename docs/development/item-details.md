@@ -29,7 +29,7 @@ Competing writers serialize; only one edit based on the same version can commit.
 
 On stale saves, the attempted fields remain editable/copyable on the original open page, the save button is disabled, and a clearly labelled link opens the latest saved item in a **separate tab**. There is no automatic rebasing, force-save or silent merge. [#11 adds in-page comparison and deliberate reconciliation](edit-reconciliation.md): only explicit review advances the editing version, keeping attempted fields unchanged. [#12 adds member-visible history and deliberate recovery](edit-history.md). Generic connection/service/sign-in errors also keep text on the open page and allow retry. If an acknowledgement is lost after commit, retrying the original version gets a conflict rather than overwriting newer work or creating another revision.
 
-This is **in-page preservation**, not storage across reloads/closing the tab or offline editing. Do not refresh the failed editor to resolve a conflict before copying its attempted text. Unsaved-work interruption recovery remains its own slice.
+This slice originally provides **in-page preservation**, not a full offline editor. [#14 adds account-scoped local pending text and explicit reload/navigation recovery](pending-text.md), subject to browser retention limits and fresh identity checks. Restored edits still require comparison and deliberate version review; copy valuable text separately rather than relying on browser storage.
 
 ## Recoverability and preservation boundaries
 

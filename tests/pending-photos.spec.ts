@@ -7,12 +7,12 @@ import { ListObjectsV2Command, GetObjectCommand } from "@aws-sdk/client-s3";
 import { familyJourney, dbUrl, outbox, post } from "./support/family";
 import { testStorage } from "./support/storage";
 
-const db = createClient({ url: dbUrl });
-const { signIn, createCollection, invite, accept } = familyJourney(db);
+const db = createClient({ url: dbUrl, timeout: 5000 });
+const { signIn, createCollection: createNativeCollection, invite, accept } = familyJourney(db);
 const fixtures = resolve("tests/fixtures/photos");
 let storage: ReturnType<typeof testStorage>;
 test.setTimeout(90_000);
-test.beforeAll(async () => { storage = testStorage(); await db.execute("PRAGMA busy_timeout=5000"); });
+test.beforeAll(() => { storage = testStorage(); });
 test.beforeEach(async () => {
   await db.batch(["story_revisions", "stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"].map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
@@ -25,6 +25,17 @@ test.afterEach(async ({ page }) => {
 test.afterAll(() => { db.close(); storage.client.destroy(); });
 const capture = (page: Page) => page.getByRole("region", { name: /Capture a belonging|Add another photo/ });
 const pending = (page: Page) => page.getByRole("region", { name: "Pending photos on this device", exact: true });
+async function captureReady(page: Page) {
+  // Native forms and navigation can expose SSR before the capture client runs.
+  await expect(page.getByLabel("Choose from your photo library", { exact: true })).toBeEnabled({ timeout: 30_000 });
+}
+async function createCollection(page: Page, name = "Family one") {
+  const path = await createNativeCollection(page, name);
+  await captureReady(page);
+  return path;
+}
+async function openCapture(page: Page, path: string) { await page.goto(path); await captureReady(page); }
+async function reloadCapture(page: Page) { await page.reload(); await captureReady(page); }
 async function family(page: Page) { await signIn(page, "founder@example.com", true); return createCollection(page); }
 async function select(page: Page, file = "small.png") {
   const input = page.getByLabel("Choose from your photo library", { exact: true });
@@ -66,7 +77,7 @@ test("interruption before intent creation retains the file across reload and exp
   await save(page); await expect(capture(page).getByRole("alert")).toContainText("save was interrupted");
   expect((await db.execute("SELECT * FROM items")).rows).toHaveLength(0);
   await page.route("**/auth/account", route => route.abort("failed"));
-  await page.reload();
+  await reloadCapture(page);
   await expect(capture(page).getByRole("alert")).toContainText("Reconnect");
   await expect(page.locator(".photo-preview, .pending-photos button")).toHaveCount(0);
   await page.unroute("**/auth/account");
@@ -88,7 +99,7 @@ test("an interrupted PUT resumes after expired authorization by renewing the ori
   expect((await db.execute("SELECT id FROM photo_uploads")).rows.map(row => row.id)).toEqual([local.id]);
   await db.execute("UPDATE photo_uploads SET expires_at=0");
   await page.unroute(`${storage.endpoint}/**`);
-  await page.reload(); await resume(page); await save(page);
+  await reloadCapture(page); await resume(page); await save(page);
   await expect(page.getByRole("heading", { name: "Untitled belonging", exact: true })).toBeVisible();
   expect((await db.execute("SELECT id FROM photo_uploads")).rows.map(row => row.id)).toEqual([local.id]);
   expect((await db.execute("SELECT id FROM item_photos")).rows.map(row => row.id)).toEqual([local.id]);
@@ -102,7 +113,7 @@ test("reload after a lost finish acknowledgement reconciles saved state without 
   await save(page); await expect(capture(page).getByRole("alert")).toContainText("save was interrupted");
   expect((await db.execute("SELECT * FROM items")).rows).toHaveLength(1);
   const files = await verifiedFiles(local.id);
-  await page.reload();
+  await reloadCapture(page);
   await expect(page.getByRole("link", { name: /Untitled belonging — Draft item/ })).toBeVisible();
   await expect(pending(page)).toContainText("save not confirmed");
   // If retry unnecessarily uploads again it will fail this request and never navigate.
@@ -124,8 +135,12 @@ test("pending additional views retain their original item and collection when re
   await page.route("**/photo-uploads/*/finish", async route => { await route.fetch(); await route.abort("failed"); }, { times: 1 });
   await save(page); await expect(capture(page).getByRole("alert")).toContainText("save was interrupted");
   const other = await createCollection(page, "Other collection");
+  // The native form can show its SSR page before the pending client hydrates.
+  await expect(page.getByLabel("Choose from your photo library", { exact: true })).toBeEnabled({ timeout: 30_000 });
   await expect(pending(page)).toContainText("No retained pending");
-  await page.goto(collection); await expect(pending(page)).toContainText("Another photo of Untitled belonging");
+  await openCapture(page, collection);
+  await expect(page.getByLabel("Choose from your photo library", { exact: true })).toBeEnabled({ timeout: 30_000 });
+  await expect(pending(page)).toContainText("Another photo of Untitled belonging");
   await resume(page, "small.webp"); await save(page);
   await expect(page).toHaveURL(itemPath);
   await expect(page.locator(".item-view")).toHaveCount(2);
@@ -153,7 +168,7 @@ test("different identities cannot see or submit another contributor's pending ph
   await expect(page.locator(".photo-preview, .selected-photo, .pending-photos button")).toHaveCount(0);
   expect((await db.execute("SELECT * FROM photo_uploads")).rows).toHaveLength(0);
   expect((await post(page.request, "/auth/sign-out", {})).status()).toBe(303);
-  await signIn(page, "founder@example.com"); await page.goto(collection);
+  await signIn(page, "founder@example.com"); await openCapture(page, collection);
   await resume(page); await save(page);
   await expect(page.getByRole("heading", { name: "Untitled belonging", exact: true })).toBeVisible();
   expect((await db.execute("SELECT created_by FROM items")).rows[0].created_by).toBe(local.accountId);
@@ -275,7 +290,7 @@ test("expired sessions hide local previews and require authentication before res
   await expect(capture(page).getByRole("alert")).toContainText("original contributor");
   await expect(page.locator(".selected-photo")).toHaveCount(0);
   expect((await db.execute("SELECT * FROM photo_uploads")).rows).toHaveLength(0);
-  await signIn(page, "founder@example.com"); await page.goto(collection); await resume(page); await save(page);
+  await signIn(page, "founder@example.com"); await openCapture(page, collection); await resume(page); await save(page);
   await expect(page.getByRole("heading", { name: "Untitled belonging", exact: true })).toBeVisible();
   expect((await db.execute("SELECT id FROM items")).rows[0].id).toBe(local.id);
 });
@@ -301,7 +316,7 @@ test("removed membership and capacity rejection retain pending work without swit
 test("unsupported content and processing failures remain pending, never mislabeled as saved", async ({ page }) => {
   await family(page); await select(page, "malformed.jpg");
   await save(page); await expect(capture(page).getByRole("alert")).toContainText("JPEG");
-  await page.reload(); await expect(pending(page)).toContainText("malformed.jpg");
+  await reloadCapture(page); await expect(pending(page)).toContainText("malformed.jpg");
   await pending(page).getByRole("button", { name: "Discard pending photo malformed.jpg", exact: true }).click();
   await expect(pending(page)).toContainText("No retained pending");
   await select(page);
@@ -311,7 +326,7 @@ test("unsupported content and processing failures remain pending, never mislabel
     await expect(page.locator("body")).not.toContainText("private processing diagnostic");
     expect((await db.execute("SELECT * FROM items")).rows).toHaveLength(0);
   } finally { await db.execute("DROP TRIGGER fail_pending_publish"); }
-  await page.reload(); await resume(page); await save(page);
+  await reloadCapture(page); await resume(page); await save(page);
   await expect(page.getByRole("heading", { name: "Untitled belonging", exact: true })).toBeVisible();
   expect((await db.execute("SELECT * FROM items")).rows).toHaveLength(1);
 });
@@ -383,7 +398,7 @@ test("expired intent renewal cannot displace a live lease or change uploader, co
   const other = await createCollection(page, "Other collection");
   expect((await post(page.request, other + "/photo-uploads", values)).status()).toBe(404);
   expect((await post(page.request, endpoint, { ...values, accountId: randomUUID() })).status()).toBe(409);
-  await page.goto(collection); await resume(page); await save(page);
+  await openCapture(page, collection); await resume(page); await save(page);
   await expect(page.getByRole("heading", { name: "Untitled belonging", exact: true })).toBeVisible();
   const item = new URL(page.url()).pathname;
   expect((await post(page.request, item + "/photo-uploads", values)).status()).toBe(404);
@@ -401,7 +416,7 @@ test("concurrent tabs retry one pending intent without duplicate records, and mo
   await page.getByLabel("Choose from your photo library", { exact: true }).setInputFiles({ name, mimeType: "image/png", buffer: await readFile(`${fixtures}/small.png`) });
   await expect(capture(page).getByRole("status")).toContainText("Pending on this device");
   const local = (await rows(page))[0];
-  const second = await context.newPage(); await second.goto(collection); await second.setViewportSize({ width: 375, height: 812 });
+  const second = await context.newPage(); await openCapture(second, collection); await second.setViewportSize({ width: 375, height: 812 });
   const control = pending(second).getByRole("button", { name: `Resume pending photo ${name}`, exact: true });
   await control.focus(); await second.keyboard.press("Enter");
   await expect(capture(second).getByRole("status")).toContainText("Pending photo loaded");
@@ -412,5 +427,5 @@ test("concurrent tabs retry one pending intent without duplicate records, and mo
   expect((await db.execute("SELECT id FROM items")).rows.map(row => row.id)).toEqual([local.id]);
   expect((await db.execute("SELECT id FROM item_photos")).rows.map(row => row.id)).toEqual([local.id]);
   expect(await verifiedFiles(local.id)).toHaveLength(2);
-  await second.goto(collection); await expect(pending(second)).toContainText("No retained pending");
+  await openCapture(second, collection); await expect(pending(second)).toContainText("No retained pending");
 });
