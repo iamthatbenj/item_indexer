@@ -261,7 +261,7 @@ test("populated version-seven upgrade retains story attribution, files and sessi
   expect((await storyEdit(page.request, item.story, "1", "First edit after upgrade.")).status()).toBe(200);
   const history = await storyHistory(item.storyId); expect(history[0]).toMatchObject({ text: "I remember this bowl at Sunday lunch.", storyteller_id: item.storyteller, recorded_by: before[0][0].recorded_by, edited_by: before[0][0].last_edited_by });
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
-  expect(await storyHistory(item.storyId)).toEqual(history); expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0); expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(8);
+  expect(await storyHistory(item.storyId)).toEqual(history); expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0); expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(9);
   const retained = await page.request.get(item.path + "/photo"); expect(retained.ok()).toBe(true); expect(retained.headers()["content-type"]).toBe("image/jpeg");
 });
 

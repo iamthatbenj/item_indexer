@@ -1,5 +1,5 @@
 import "server-only";
-import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 let client: S3Client | undefined;
@@ -64,3 +64,34 @@ export async function authorizePhotoDownload(key: string) {
   const s3 = storage();
   return getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket(), Key: key, ResponseContentType: "image/jpeg", ResponseCacheControl: "private, no-store", ResponseContentDisposition: 'inline; filename="family-photo.jpg"' }), { expiresIn: 60 });
 }
+
+// Export helpers likewise accept only persisted, server-derived private keys.
+export async function readInventoryThumbnail(key: string, signal: AbortSignal): Promise<Buffer> {
+  const response = await storage().send(new GetObjectCommand({ Bucket: bucket(), Key: key }), { abortSignal: signal });
+  if (!response.Body) throw new Error("Missing retained thumbnail.");
+  const reader = response.Body.transformToWebStream().getReader();
+  const chunks: Uint8Array[] = []; let bytes = 0;
+  try {
+    const length = response.ContentLength;
+    if (!Number.isSafeInteger(length) || !length || length < 0 || length > 512 * 1024) throw new Error("Invalid retained thumbnail size.");
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > length) throw new Error("Retained thumbnail exceeds its declared size.");
+      chunks.push(value);
+    }
+    if (bytes !== length) throw new Error("Incomplete retained thumbnail.");
+    return Buffer.concat(chunks);
+  } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
+export async function putInventoryPDF(key: string, bytes: Buffer, sha256: string, signal: AbortSignal) {
+  await storage().send(new PutObjectCommand({ Bucket: bucket(), Key: key, Body: bytes, ContentType: "application/pdf", CacheControl: "private, no-store", Metadata: { sha256 } }), { abortSignal: signal });
+}
+export async function authorizeInventoryDownload(key: string, bytes: number, sha256: string, expiresIn: number) {
+  const s3 = storage();
+  const head = await s3.send(new HeadObjectCommand({ Bucket: bucket(), Key: key }), { abortSignal: AbortSignal.timeout(10_000) });
+  if (head.ContentLength !== bytes || head.Metadata?.sha256 !== sha256 || head.ContentType !== "application/pdf") throw new Error("Inventory artifact could not be verified.");
+  return getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket(), Key: key, ResponseContentType: "application/pdf", ResponseCacheControl: "private, no-store", ResponseContentDisposition: 'attachment; filename="family-inventory.pdf"' }), { expiresIn });
+}
+export async function removeInventoryObject(key: string) { await removePhotoObject(key); }

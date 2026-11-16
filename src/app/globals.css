@@ -27,6 +27,7 @@ button { min-height: 44px; border: 1px solid var(--green); border-radius: .3rem;
 .error { background: #f9e9df; border-color: #9a4725; }
 .account { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: .9rem; flex-wrap: wrap; overflow-wrap: anywhere; }
 .collection-list { list-style: none; padding: 0; margin-bottom: 0; }
+.inventory-list { list-style: none; padding: 0; overflow-wrap: anywhere; }
 .collection-list a { display: block; padding: .8rem 0; font-weight: 600; overflow-wrap: anywhere; }
 .member-list { list-style: none; padding: 0; }
 .member-email { overflow-wrap: anywhere; }

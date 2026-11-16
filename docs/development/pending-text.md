@@ -1,6 +1,6 @@
 # Recover unsaved item and story text
 
-Local work for [#14](https://github.com/iamthatbenj/item_indexer/issues/14), following [deliberate reconciliation](edit-reconciliation.md). No push, deployment or production operation for this slice yet. Automated validation is complete; this is not hosted acceptance.
+Local work for [#14](https://github.com/iamthatbenj/item_indexer/issues/14), following [deliberate reconciliation](edit-reconciliation.md). Shipped with approval in `e7b0d89`; Vercel independently reported a successful deployment. The operator reported that the requested app checks looked good and asked to close #14. This is operator-reported hosted acceptance, not independent agent verification of authenticated/device behavior.
 
 ## Pending local input, not saved records
 
@@ -50,4 +50,4 @@ An initial broader run exposed a photo pending-list assertion that inspected unh
 
 No migration, capture pause, provider resource or secret is required. Rollback to #13 leaves server records/history and browser pending-text bytes intact but hides the new recovery UI. Do not clear site storage as a rollback step; a compatible release is needed to inspect/resume those copies. Application rollback cannot recover browser-evicted input.
 
-Before approved rollout, keep #13's separate hosted/mobile checks outstanding rather than conflating local automated results with hosted acceptance. After #14 deployment approval, check real mobile/browser storage, reload/navigation recovery, conflicting edits, sign-out/shared-device isolation, revoked access, local-copy discard, unavailable storage and ambiguous saves with disposable text. Record device/browser versions and limitations; never use sole-copy family recollections for destructive storage/eviction checks.
+The approved #14 push/deployment and operator-reported acceptance are complete. Keep #13's separate hosted/mobile checks outstanding unless explicitly completed, rather than inferring them from #14 acceptance. For future regression/device checks, use disposable text to examine real mobile/browser storage, reload/navigation recovery, conflicting edits, sign-out/shared-device isolation, revoked access, local-copy discard, unavailable storage and ambiguous saves. Record device/browser versions and limitations; never use sole-copy family recollections for destructive storage/eviction checks.

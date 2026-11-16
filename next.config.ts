@@ -2,7 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  serverExternalPackages: ["@libsql/client"],
+  serverExternalPackages: ["@libsql/client", "pdfkit", "fontkit"],
+  outputFileTracingIncludes: { "/collections/*/inventory/**": ["./assets/inventory-fonts/**/*"] },
   async headers() {
     return [{ source: "/:path*", headers: [
       { key: "Cache-Control", value: "private, no-store" },

@@ -1,6 +1,12 @@
 import type { Client } from "@libsql/client";
 
+export async function removeInventorySchema(db: Client) {
+  if (Number((await db.execute("SELECT COUNT(*) AS count FROM inventory_exports")).rows[0].count) !== 0) throw new Error("Legacy fixture must have no inventory requests.");
+  await db.batch(["DROP TABLE inventory_export_attempts", "DROP TABLE inventory_exports", "DELETE FROM schema_migrations WHERE name='0009_inventory_exports.sql'"], "write");
+}
+
 export async function removeStoryRevisionsSchema(db: Client) {
+  await removeInventorySchema(db);
   if (Number((await db.execute("SELECT COUNT(*) AS count FROM story_revisions")).rows[0].count) !== 0) throw new Error("Legacy fixture must have no story revisions.");
   await db.batch(["DROP TABLE story_revisions", "DELETE FROM schema_migrations WHERE name='0008_story_revisions.sql'"], "write");
 }

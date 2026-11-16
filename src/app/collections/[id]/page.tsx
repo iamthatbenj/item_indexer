@@ -33,6 +33,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
       <p>All members have equal editing permissions. Administrators manage invitations and access, not editorial authority.</p>
     </section>
     <p><Link href={`/collections/${id}/people`}>Manage people and current keepers</Link></p>
+    <p><Link href={`/collections/${id}/inventory`}>Download a compact inventory PDF</Link></p>
     <PhotoCapture key={`${account.id}:${id}`} accountId={account.id} collectionId={id} />
     <section className="card" aria-labelledby="belongings-heading">
       <h2 id="belongings-heading">Belongings</h2>
