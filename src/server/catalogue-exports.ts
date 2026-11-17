@@ -1,0 +1,10 @@
+import "server-only";
+import { pdfExports } from "./pdf-exports";
+export { PDFExportError as CatalogueError } from "./pdf-exports";
+export type { PDFStatus as CatalogueStatus } from "./pdf-exports";
+const catalogue = pdfExports("catalogue");
+export const catalogueList = catalogue.list;
+export const requestCatalogue = catalogue.request;
+export const generateCatalogue = catalogue.generate;
+export const catalogueDownload = catalogue.download;
+export const discardCatalogue = catalogue.discard;

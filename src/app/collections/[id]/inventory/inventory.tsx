@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { InventoryStatus } from "@/server/inventory-exports";
+import type { PDFStatus as InventoryStatus } from "@/server/pdf-export-types";
 
 function valid(job: InventoryStatus) {
   return job && typeof job.id === "string" && ["processing", "interrupted", "ready", "failed", "expired", "deleting"].includes(job.status)
     && (job.status !== "ready" || Number.isSafeInteger(job.bytes) && job.bytes! > 0 && Number.isSafeInteger(job.pages) && job.pages! > 0);
 }
-export default function Inventory({ accountId, collectionId, initialJobs }: { accountId: string; collectionId: string; initialJobs: InventoryStatus[] }) {
-  const path = `/collections/${collectionId}/inventory/requests`;
+export default function Inventory({ accountId, collectionId, initialJobs, format = "inventory" }: { accountId: string; collectionId: string; initialJobs: InventoryStatus[]; format?: "inventory" | "catalogue" }) {
+  const kind = format; const title = format === "inventory" ? "Inventory" : "Catalogue";
+  const path = `/collections/${collectionId}/${kind}/requests`;
   const [jobs, setJobs] = useState(initialJobs);
   const [busy, setBusy] = useState(false);
   const [available, setAvailable] = useState(true);
@@ -21,11 +22,11 @@ export default function Inventory({ accountId, collectionId, initialJobs }: { ac
     const read = ++reads.current;
     let response: Response;
     try { response = await fetch(path, { cache: "no-store", signal: signal ?? AbortSignal.timeout(15_000) }); }
-    catch { throw new Error("Inventory status was not confirmed. Check access and connection, then check again later."); }
+    catch { throw new Error("PDF status was not confirmed. Check access and connection, then check again later."); }
     const result = await response.json().catch(() => null);
     if (!mounted.current || read !== reads.current) return;
     if (response.status === 401 || response.status === 404) { setAvailable(false); setJobs([]); }
-    if (!response.ok || !Array.isArray(result?.jobs) || !result.jobs.every(valid)) throw new Error(result?.error || "Inventory status was not confirmed. Check access and connection, then retry.");
+    if (!response.ok || !Array.isArray(result?.jobs) || !result.jobs.every(valid)) throw new Error(result?.error || "PDF status was not confirmed. Check access and connection, then retry.");
     setJobs(result.jobs); setAvailable(true);
   }, [path]);
   const active = jobs.filter(job => job.status === "processing").map(job => job.id).sort().join(",");
@@ -65,28 +66,28 @@ export default function Inventory({ accountId, collectionId, initialJobs }: { ac
       const result = await response.json().catch(() => null);
       if (!mounted.current) return;
       if (response.status === 401 || response.status === 404 || typeof result?.error === "string" && result.error.includes("signed-in account changed")) { setAvailable(false); setJobs([]); }
-      if (!response.ok || (action === "discard" ? result?.discarded !== true : !valid(result?.job) || result.job.id !== requestId)) throw new Error(result?.error || "Inventory request was not confirmed. Check status before retrying; the same create request is retained on this page.");
+      if (!response.ok || (action === "discard" ? result?.discarded !== true : !valid(result?.job) || result.job.id !== requestId)) throw new Error(result?.error || "PDF request was not confirmed. Check status before retrying; the same create request is retained on this page.");
       if (action === "create") operation.current = "";
-      setNotice(action === "discard" ? "Generated inventory discarded. Saved items, stories, photos and downloaded copies are unchanged." : result.job.status === "ready" ? "The existing complete PDF is ready. No duplicate generation was started." : "Inventory request accepted — not yet a confirmed PDF. You may leave this page and return to check status.");
+      setNotice(action === "discard" ? "Generated PDF discarded. Saved items, stories, photos and downloaded copies are unchanged." : result.job.status === "ready" ? "The existing complete PDF is ready. No duplicate generation was started." : "PDF request accepted — not yet a confirmed PDF. You may leave this page and return to check status.");
       await load();
-    } catch (error) { if (mounted.current) setError(error instanceof Error && error.name === "Error" ? error.message : "Inventory request was interrupted. Check status before retrying; this page keeps the same create request to avoid duplicate generations."); }
+    } catch (error) { if (mounted.current) setError(error instanceof Error && error.name === "Error" ? error.message : "PDF request was interrupted. Check status before retrying; this page keeps the same create request to avoid duplicate generations."); }
     finally { working.current = false; if (mounted.current) setBusy(false); }
   }
-  return <section className="card" aria-label="Private inventory PDFs">
-    <h2>Generate a saved inventory</h2>
+  return <section className="card" aria-label={`Private ${kind} PDFs`}>
+    <h2>Generate a saved {kind}</h2>
     <p>Images and fonts are embedded. A downloaded copy works after signing out and without the app; keep it private on your device. A fresh download requires current collection membership. Already-issued download links can remain valid for up to 60 seconds.</p>
-    <p className="hint">Pilot limits: 200 saved items, 16 MiB per PDF, five requests retained per collection, three attempts per request, and seven-day download availability. Each background attempt has a cooperative 25-second deadline and 60-second platform duration limit. Retries keep the original saved snapshot; generate a new inventory to include later edits. Discard old generated copies to free capacity; family source records are never removed.</p>
-    <button type="button" disabled={!ready || busy || !available} onClick={() => void action("create")}>Generate inventory PDF</button>{" "}
-    <button type="button" className="secondary" disabled={!ready || busy} onClick={() => { setError(""); setNotice(""); void load().catch(error => { if (mounted.current) setError(error instanceof Error ? error.message : "Status unavailable."); }); }}>Check inventory status</button>
-    {!available && <p role="alert">Access or the signed-in account changed. <a href={`/collections/${collectionId}/inventory`}>Reload this page</a> or sign in again before requesting or downloading a PDF.</p>}
+    <p className="hint">Pilot limits: 200 saved items{format === "catalogue" ? ", 200 retained photos and 1000 independent stories" : ""}, 250 pages, 16 MiB per PDF, five requests retained per collection across both formats, three attempts per request, and seven-day download availability. Each background attempt has a cooperative 25-second deadline and 60-second platform duration limit. Retries keep the original saved snapshot; generate a new {kind} to include later edits. Discard old generated copies to free capacity; family source records are never removed.</p>
+    <button type="button" disabled={!ready || busy || !available} onClick={() => void action("create")}>Generate {kind} PDF</button>{" "}
+    <button type="button" className="secondary" disabled={!ready || busy} onClick={() => { setError(""); setNotice(""); void load().catch(error => { if (mounted.current) setError(error instanceof Error ? error.message : "Status unavailable."); }); }}>Check {kind} status</button>
+    {!available && <p role="alert">Access or the signed-in account changed. <a href={`/collections/${collectionId}/${kind}`}>Reload this page</a> or sign in again before requesting or downloading a PDF.</p>}
     {error && <p role="alert" className="notice error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {!jobs.length ? <p>No retained inventory requests for this family collection.</p> : <ul className="inventory-list">{jobs.map(job => <li className="card" key={job.id} aria-label={`Inventory ${job.id}`}>
-      <h3>Inventory requested <time dateTime={new Date(job.createdAt).toISOString()}>{new Date(job.createdAt).toISOString()}</time></h3>
+    {!jobs.length ? <p>No retained {kind} requests for this family collection.</p> : <ul className="inventory-list">{jobs.map(job => <li className="card" key={job.id} aria-label={`${title} ${job.id}`}>
+      <h3>{title} requested <time dateTime={new Date(job.createdAt).toISOString()}>{new Date(job.createdAt).toISOString()}</time></h3>
       <p>{job.total} saved items. Attempt {job.attempts} of 3.</p>
-      {job.status === "ready" ? <><p>PDF ready — {job.pages} pages, {job.bytes!.toLocaleString()} bytes. Available until {new Date(job.expiresAt).toISOString()}.</p><p><a href={`${path}/${job.id}/download`}>Download private inventory PDF</a></p></> : job.status === "processing" ? <p>Generation not yet confirmed. Stage: {job.phase}. Retained thumbnails prepared: {job.progress} of {job.total}.</p> : <p>{job.status === "interrupted" ? "Generation was interrupted or its completion was not confirmed. Check status or retry." : job.status === "expired" ? "This generated inventory expired. Request a fresh saved snapshot." : job.status === "deleting" ? "Discard is not yet confirmed. Retry discarding to finish storage cleanup." : job.error || "Generation failed. No partial PDF is available."}</p>}
-      {(job.status === "failed" || job.status === "interrupted") && job.attempts < 3 && <button type="button" disabled={busy || !available} onClick={() => void action("retry", job.id)}>Retry inventory generation</button>}{" "}
-      {job.status !== "processing" && <button type="button" className="secondary" disabled={busy || !available} onClick={() => void action("discard", job.id)}>Discard generated inventory</button>}
+      {job.status === "ready" ? <><p>PDF ready — {job.pages} pages, {job.bytes!.toLocaleString()} bytes. Available until {new Date(job.expiresAt).toISOString()}.</p><p><a href={`${path}/${job.id}/download`}>Download private {kind} PDF</a></p></> : job.status === "processing" ? <p>Generation not yet confirmed. Stage: {job.phase}. Saved items prepared: {job.progress} of {job.total}.</p> : <p>{job.status === "interrupted" ? "Generation was interrupted or its completion was not confirmed. Check status or retry." : job.status === "expired" ? `This generated ${kind} expired. Request a fresh saved snapshot.` : job.status === "deleting" ? "Discard is not yet confirmed. Retry discarding to finish storage cleanup." : job.error || "Generation failed. No partial PDF is available."}</p>}
+      {(job.status === "failed" || job.status === "interrupted") && job.attempts < 3 && <button type="button" disabled={busy || !available} onClick={() => void action("retry", job.id)}>Retry {kind} generation</button>}{" "}
+      {job.status !== "processing" && <button type="button" className="secondary" disabled={busy || !available} onClick={() => void action("discard", job.id)}>Discard generated {kind}</button>}
     </li>)}</ul>}
     <noscript>Generation and status checking require JavaScript. Existing PDFs remain downloadable through their authorized download links.</noscript>
   </section>;

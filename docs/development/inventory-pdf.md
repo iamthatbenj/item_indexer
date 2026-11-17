@@ -1,6 +1,6 @@
 # Private compact inventory PDF (#15)
 
-Local implementation of [#15](https://github.com/iamthatbenj/item_indexer/issues/15), after completed #7/#8. Production migration and deployment have not been performed. Migration **0009_inventory_exports.sql** and explicit rollout approval are required before any auto-deploying push. Local implementation is ready for review with the validation caveat below; this is not hosted acceptance.
+[#15](https://github.com/iamthatbenj/item_indexer/issues/15) shipped in `8761a8c`. The operator reported migration #9 and the `inventories/`-only seven-day `prune-inventories` rule complete; Vercel independently reported deployment success. The operator then reported that the export looked good and requested closure of #15. This records operator-reported acceptance, not independent authenticated/device verification. Later [#16 catalogue work](illustrated-catalogue.md) shares this pipeline, requires migration #10, and remains local-only.
 
 ## Saved snapshot and printable artifact
 
@@ -67,7 +67,9 @@ All 31 thumbnail placements were checked in the first PDF, not 32 (the extra pho
 
 Existing populated-upgrade fixtures now remove the empty version-nine derivative tables when constructing earlier schemas and expect nine migrations after a complete rerun. Inventory fixtures drain background status before resetting data, and clean their generated/source test objects; they do not use production records or credentials.
 
-## Approved rollout and rollback (not performed)
+## Rollout and rollback
+
+The original approved #15 rollout is complete as recorded above. The following remains the setup/rollback reference for another environment; #16 requires its separate approval and additive migration #10 before deployment.
 
 1. Review/approve the code and resource/retention choices. Back up/check the hosted structured database. Apply additive **0009_inventory_exports.sql before any push that auto-deploys this code**. Old #14 application code remains compatible with the added tables. No capture pause or source-photo rewrite is required.
 2. Keep the existing R2 Standard bucket **private** and the current server-only credentials/CORS/staging rules intact. Add an operator-approved lifecycle rule for **prefix `inventories/` only**, expiring generated objects after seven days. Do **not** apply expiry to the bucket as a whole or retained-photo prefixes. This cleans expired candidates and late-write orphans even if no member returns to discard them. Job metadata and app authorization expire separately; lifecycle deletion timing is not an exact byte-revocation clock.
