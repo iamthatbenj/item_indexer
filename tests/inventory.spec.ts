@@ -348,7 +348,7 @@ test("the additive version-nine upgrade preserves populated family content, roll
     execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
   }
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
-  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(10);
+  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(11);
   expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0);
   expect((await page.request.get(endpoint(item.collection))).status()).toBe(200);
 });

@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Verify format-1.0 archives offline, without extracting or executing ZIP members.
+Integrity is relative to the manifest, not a signature or proof of historical truth.
+Use a trusted copy of this program for archives of uncertain provenance.
+"""
+import hashlib
+import json
+import os
+import re
+import stat
+import sys
+import zipfile
+
+FORMAT = "family-belongings"
+VERSION = "1.0"
+HEX = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        require(key not in result, "Duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def json_bytes(raw):
+    return json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object,
+                      parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Invalid JSON number")))
+
+
+def indexed(rows):
+    require(isinstance(rows, list), "Expected record array")
+    result = {}
+    for row in rows:
+        require(isinstance(row, dict) and isinstance(row.get("id"), str) and row["id"], "Invalid record identity")
+        require(row["id"] not in result, "Duplicate record identity")
+        result[row["id"]] = row
+    return result
+
+
+def relationships(data, files):
+    root = {"format", "version", "snapshot", "collection", "contributors", "items", "people", "stories", "photos", "item_revisions", "person_revisions", "story_revisions"}
+    require(set(data) == root and data["format"] == FORMAT and data["version"] == VERSION, "Unsupported data format/version/fields")
+    snapshot = data["snapshot"]
+    require(set(snapshot) == {"id", "captured_at", "source_collection_id", "generated_by"}, "Invalid snapshot")
+    require(set(data["collection"]) == {"id", "name", "created_at"} and data["collection"]["id"] == snapshot["source_collection_id"], "Invalid collection namespace")
+    fields = {
+        "contributors": "id email",
+        "items": "id name description status version created_by created_at last_edited_by updated_at current_keeper_id current_keeper_version",
+        "people": "id name note version created_by created_at last_edited_by updated_at",
+        "stories": "id item_id storyteller_id storyteller_version text version recorded_by recorded_at last_edited_by updated_at",
+        "photos": "id item_id width height photo_bytes sha256 created_at created_by removed_at removed_by retained_file thumbnail_file",
+        "item_revisions": "id item_id version name description status edited_by edited_at current_keeper_id current_keeper_version",
+        "person_revisions": "id person_id version name note edited_by edited_at",
+        "story_revisions": "id story_id version text storyteller_id storyteller_version recorded_by recorded_at edited_by edited_at",
+    }
+    maps = {}
+    for group, names in fields.items():
+        maps[group] = indexed(data[group])
+        require(all(set(row) == set(names.split()) for row in data[group]), "Unsupported record fields")
+    require(sum(len(data[key]) for key in fields if key != "contributors") <= 10000, "Too many records")
+    require(len(data["items"]) <= 200 and len(data["people"]) <= 2000 and len(data["stories"]) <= 1000 and len(data["contributors"]) <= 200, "Record limits exceeded")
+
+    def ref(value, group, nullable=False):
+        require(nullable and value is None or isinstance(value, str) and value in maps[group], "Dangling record/credit reference")
+
+    ref(snapshot["generated_by"], "contributors")
+    versions = set()
+    for p in data["people"]:
+        versions.add((p["id"], p["version"]))
+    for p in data["person_revisions"]:
+        versions.add((p["person_id"], p["version"]))
+
+    def person(pid, version, nullable=False):
+        if nullable and pid is None and version is None:
+            return
+        ref(pid, "people")
+        require(type(version) is int and (pid, version) in versions, "Missing historical person version")
+
+    for group, rows in ((key, data[key]) for key in fields):
+        for row in rows:
+            for key in ("created_by", "last_edited_by", "recorded_by", "edited_by", "removed_by"):
+                if key in row:
+                    ref(row[key], "contributors", key == "removed_by" or group == "items" and key == "last_edited_by")
+            if "current_keeper_id" in row:
+                person(row["current_keeper_id"], row["current_keeper_version"], True)
+            if "storyteller_id" in row:
+                person(row["storyteller_id"], row["storyteller_version"])
+            if "item_id" in row:
+                ref(row["item_id"], "items")
+            if "status" in row:
+                require(row["status"] == ("complete" if row["name"] and row["description"] else "draft"), "Incorrect item status")
+            if group == "items":
+                require((row["last_edited_by"] is None) == (row["updated_at"] is None) and (row["last_edited_by"] is not None or row["version"] == 1), "Invalid legacy item credit")
+    for current, revision, parent in (("items", "item_revisions", "item_id"), ("people", "person_revisions", "person_id"), ("stories", "story_revisions", "story_id")):
+        for rev in data[revision]:
+            ref(rev[parent], current)
+        for row in data[current]:
+            require(type(row["version"]) is int and 1 <= row["version"] <= 10001, "Invalid version")
+            prior = [r["version"] for r in data[revision] if r[parent] == row["id"]]
+            require(all(type(v) is int for v in prior) and sorted(prior) == list(range(1, row["version"])), "Missing/duplicate history version")
+    for rev in data["story_revisions"]:
+        row = maps["stories"][rev["story_id"]]
+        require(all(row[key] == rev[key] for key in ("storyteller_id", "storyteller_version", "recorded_by", "recorded_at")), "Immutable story attribution changed")
+    referenced = set()
+    active_items = set()
+    active_photos = 0
+    for photo in data["photos"]:
+        require(bool(HEX.fullmatch(photo["sha256"])) and type(photo["photo_bytes"]) is int and photo["photo_bytes"] > 0, "Invalid retained photo metadata")
+        require(all(type(photo[key]) is int and 1 <= photo[key] <= 3200 for key in ("width", "height")), "Invalid retained dimensions")
+        if photo["removed_at"] is not None:
+            require(photo["removed_by"] is not None and photo["retained_file"] is None and photo["thumbnail_file"] is None, "Removed binary was resurrected")
+            continue
+        require(photo["removed_by"] is None, "Invalid removal metadata")
+        active_items.add(photo["item_id"])
+        active_photos += 1
+        for key in ("retained_file", "thumbnail_file"):
+            entry = photo[key]
+            require(isinstance(entry, dict) and set(entry) == {"path", "bytes", "sha256"}, "Missing file descriptor")
+            path = entry["path"]
+            require(re.fullmatch(r"attachments/[0-9]{6}/(retained|thumbnail)\.jpg", path) is not None, "Invalid attachment path")
+            require(path not in referenced and path in files and entry == files[path], "File relationship/manifest mismatch")
+            require(path.endswith("/retained.jpg" if key == "retained_file" else "/thumbnail.jpg"), "Incorrect file kind")
+            referenced.add(path)
+        require(photo["retained_file"]["bytes"] == photo["photo_bytes"] and photo["retained_file"]["sha256"] == photo["sha256"], "Retained file does not match saved metadata")
+    require(active_photos <= 500 and active_items == set(maps["items"]), "Required photo missing/over limit")
+    require(set(files) == referenced | {"data.json", "FORMAT.md", "verify.py"}, "Unrelated/unused attachment")
+
+
+def verify(path):
+    require(os.path.getsize(path) <= 256 * 1024 * 1024, "ZIP exceeds pilot size")
+    with zipfile.ZipFile(path) as archive:
+        infos = archive.infolist()
+        require(len(infos) <= 1004 and len({i.filename for i in infos}) == len(infos), "Too many/duplicate ZIP names")
+        require(sum(i.file_size for i in infos) <= 272 * 1024 * 1024, "Expanded ZIP exceeds limit")
+        for info in infos:
+            name = info.filename
+            require(name and not name.startswith("/") and "\\" not in name and ":" not in name and all(p not in ("", ".", "..") for p in name.split("/")), "Unsafe ZIP path")
+            require(not stat.S_ISLNK(info.external_attr >> 16) and not info.is_dir() and not info.flag_bits & 1 and info.compress_type in (0, 8), "Unsupported ZIP entry")
+        require(archive.getinfo("manifest.json").file_size <= 512 * 1024, "Manifest too large")
+        manifest = json_bytes(archive.read("manifest.json"))
+        require(set(manifest) == {"format", "version", "snapshot", "files"} and manifest["format"] == FORMAT and manifest["version"] == VERSION, "Unsupported manifest")
+        files = {}
+        for entry in manifest["files"]:
+            require(set(entry) == {"path", "bytes", "sha256"} and isinstance(entry["path"], str), "Invalid manifest entry")
+            require(entry["path"] not in files and type(entry["bytes"]) is int and 0 < entry["bytes"] <= 20 * 1024 * 1024 and HEX.fullmatch(entry["sha256"]), "Duplicate/invalid manifest entry")
+            files[entry["path"]] = entry
+        require(set(archive.namelist()) == set(files) | {"manifest.json"}, "Missing/extra ZIP file")
+        for path, entry in files.items():
+            require(archive.getinfo(path).file_size == entry["bytes"], "File byte count mismatch")
+            digest = hashlib.sha256()
+            with archive.open(path) as member:
+                while True:
+                    chunk = member.read(65536)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+            require(digest.hexdigest() == entry["sha256"], "File checksum mismatch")
+        require(files["data.json"]["bytes"] <= 8 * 1024 * 1024, "Structured data too large")
+        data = json_bytes(archive.read("data.json"))
+        require(data["snapshot"] == manifest["snapshot"], "Snapshot mismatch")
+        relationships(data, files)
+        return {"valid": True, "version": VERSION, "items": len(data["items"]), "photos": len(data["photos"]), "stories": len(data["stories"]), "files": len(files)}
+
+
+if __name__ == "__main__":
+    try:
+        require(len(sys.argv) == 2, "Usage: python3 verify.py family-archive.zip")
+        print(json.dumps(verify(sys.argv[1])))
+    except Exception as error:
+        print("Archive verification failed: " + str(error), file=sys.stderr)
+        sys.exit(1)

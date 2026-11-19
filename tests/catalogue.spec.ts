@@ -347,6 +347,6 @@ test("migration ten is additive, transactional on failure and rerunnable with ve
     expect((await db.execute("SELECT name FROM schema_migrations WHERE name='0010_catalogue_exports.sql'")).rows).toHaveLength(0);
   } finally { await db.execute("DROP TABLE catalogue_export_attempts"); execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv }); }
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
-  expect((await db.execute("SELECT * FROM inventory_exports")).rows).toEqual(before); expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(10);
+  expect((await db.execute("SELECT * FROM inventory_exports")).rows).toEqual(before); expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(11);
   expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0);
 });

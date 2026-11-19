@@ -267,7 +267,7 @@ test("version-six upgrade preserves populated files, keeper history and sessions
   const saved = await rows();
   await page.goto("/");
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
-  expect(await rows()).toEqual(saved); expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(10);
+  expect(await rows()).toEqual(saved); expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(11);
   const photo = await page.request.get(item.path + "/photo"); expect(photo.ok()).toBe(true); expect(photo.headers()["content-type"]).toBe("image/jpeg");
 });
 

@@ -1,6 +1,6 @@
 # Illustrated family catalogue (#16)
 
-Local implementation of [#16](https://github.com/iamthatbenj/item_indexer/issues/16). The operator authorized a local commit after validation; push, production migration and deployment remain unapproved. Additive **0010_catalogue_exports.sql** is required before any approved auto-deploying push. Local automated verification is complete on patched Next.js 16.4.6, including the separately authorized security patch below. Hosted and final-print acceptance remain outstanding.
+[#16](https://github.com/iamthatbenj/item_indexer/issues/16) shipped in `48d7288`, including Next.js 16.4.6. The operator reported migration #10 complete and approved push; Vercel deployment success was independently confirmed. The operator then reported satisfaction after receiving the hosted checklist, and #16 was closed on operator-reported acceptance. This does not assert every device/printing/privacy check was independently exercised. Additive **0010_catalogue_exports.sql** remains a deployment prerequisite for other environments. Later [#17 archive work](portable-archives.md) is local-only and requires its separate migration/approval.
 
 ## What members receive
 
@@ -90,11 +90,13 @@ The original Next.js 16.4.3 lockfile reported moderate advisory [GHSA-mfr8-8qww-
 
 After the operator separately authorized the patch, `next` was raised from `^16.4.3` to `^16.4.6`, the latest published stable 16.4 patch at the time, updating the lockfile's matching Next environment/SWC packages. React, application code and runtime configuration were not changed for this patch. The existing Node/React versions satisfy its published requirements. The patch is separable as `package.json`/`package-lock.json` changes and needs no migration itself; deploying #16 alongside it still requires migration #10.
 
-Final post-patch validation: **199/199 browser/integration tests passed in 40.7 minutes**, fresh typecheck and production webpack build passed, `npm audit --omit=dev` reports **zero vulnerabilities**, all nine hook regressions passed and diff checks are clean. All four inventory/catalogue request/download traces still include all seven font assets/notices with none missing. Logs: `/tmp/item-indexer-next-16-4-6-full.log`, `/tmp/item-indexer-next-16-4-6-build.log` and `/tmp/item-indexer-next-16-4-6-hook-tests.log`. The hook regressions are not a staged Pi review. The operator subsequently authorized a local commit, subject to the required staged Pi review. No push, production migration or deployment is authorized or performed. Production is not patched merely by changing this local lockfile.
+Final post-patch validation: **199/199 browser/integration tests passed in 40.7 minutes**, fresh typecheck and production webpack build passed, `npm audit --omit=dev` reports **zero vulnerabilities**, all nine hook regressions passed and diff checks are clean. All four inventory/catalogue request/download traces still include all seven font assets/notices with none missing. Logs: `/tmp/item-indexer-next-16-4-6-full.log`, `/tmp/item-indexer-next-16-4-6-build.log` and `/tmp/item-indexer-next-16-4-6-hook-tests.log`. The hook regressions are not a staged Pi review. The operator subsequently authorized commit/push; the required staged Pi review passed and `48d7288` deployed successfully as recorded above. The framework upgrade itself needed no migration; the combined catalogue release required migration #10 first.
 
 For chronology, the earlier 16.4.3 CLI initially stopped with its advisory; those old local test/build commands were retried only after the startup notice, not to hide behavioral failures. No upgrade agent was launched.
 
-## Approved rollout and rollback (not performed)
+## Rollout and rollback reference
+
+The #16 rollout is complete as recorded above. This checklist remains the setup reference for other environments; #17 has its own approval/migration gate.
 
 1. Review the code, framework-advisory response, representative outputs and processing limits. Take/check the agreed database backup before schema changes. Apply additive **0010_catalogue_exports.sql before any approved push that auto-deploys #16**. Existing #15 code remains compatible; no source rewrite or capture pause is required.
 2. Confirm the existing private R2 bucket and `prune-inventories` seven-day prefix rule remain intact. No expiry may target retained photos. New format keys are nested under that same derivative prefix.

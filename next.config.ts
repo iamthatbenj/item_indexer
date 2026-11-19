@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["@libsql/client", "pdfkit", "fontkit"],
-  outputFileTracingIncludes: { "/collections/*/inventory/**": ["./assets/inventory-fonts/**/*"], "/collections/*/catalogue/**": ["./assets/inventory-fonts/**/*"] },
+  outputFileTracingIncludes: { "/collections/*/inventory/**": ["./assets/inventory-fonts/**/*"], "/collections/*/catalogue/**": ["./assets/inventory-fonts/**/*"], "/collections/*/archive/**": ["./assets/portable-archive/FORMAT.md", "./assets/portable-archive/verify.py"] },
   async headers() {
     return [{ source: "/:path*", headers: [
       { key: "Cache-Control", value: "private, no-store" },

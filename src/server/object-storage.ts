@@ -1,6 +1,7 @@
 import "server-only";
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createReadStream } from "node:fs";
 
 let client: S3Client | undefined;
 function storage() {
@@ -98,3 +99,16 @@ export async function authorizeInventoryDownload(key: string, bytes: number, sha
   return getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket(), Key: key, ResponseContentType: "application/pdf", ResponseCacheControl: "private, no-store", ResponseContentDisposition: `attachment; filename="family-${format}.pdf"` }), { expiresIn });
 }
 export async function removeInventoryObject(key: string) { await removePhotoObject(key); }
+
+export async function putPortableArchive(key: string, path: string, bytes: number, sha256: string, signal: AbortSignal) {
+  const body = createReadStream(path);
+  try {
+    await storage().send(new PutObjectCommand({ Bucket: bucket(), Key: key, Body: body, ContentLength: bytes, ContentType: "application/zip", CacheControl: "private, no-store", Metadata: { sha256 } }), { abortSignal: signal });
+  } finally { body.destroy(); }
+}
+export async function authorizeArchiveDownload(key: string, bytes: number, sha256: string, expiresIn: number) {
+  const s3 = storage();
+  const head = await s3.send(new HeadObjectCommand({ Bucket: bucket(), Key: key }), { abortSignal: AbortSignal.timeout(10_000) });
+  if (head.ContentLength !== bytes || head.Metadata?.sha256 !== sha256 || head.ContentType !== "application/zip") throw new Error("Archive artifact could not be verified.");
+  return getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket(), Key: key, ResponseContentType: "application/zip", ResponseCacheControl: "private, no-store", ResponseContentDisposition: 'attachment; filename="family-archive.zip"' }), { expiresIn });
+}
