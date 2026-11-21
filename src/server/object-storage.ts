@@ -1,7 +1,9 @@
 import "server-only";
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 let client: S3Client | undefined;
 function storage() {
@@ -25,6 +27,26 @@ export async function authorizePhotoUpload(key: string, size: number, expiresIn:
   return getSignedUrl(s3, new PutObjectCommand({ Bucket: bucket(), Key: key, ContentType: "application/octet-stream", ContentLength: size }), {
     expiresIn, signableHeaders: new Set(["content-type", "content-length"]),
   });
+}
+
+export class IncompleteArchiveUpload extends Error {}
+
+export async function stageArchiveOnDisk(key: string, expectedBytes: number, path: string, signal: AbortSignal) {
+  const result = await storage().send(new GetObjectCommand({ Bucket: bucket(), Key: key }), { abortSignal: signal });
+  if (!result.Body) throw new IncompleteArchiveUpload();
+  if (!(result.Body instanceof Readable)) throw new Error("Unexpected archive storage stream.");
+  const source = result.Body;
+  let bytes = 0;
+  try {
+    if (result.ContentLength !== expectedBytes) throw new IncompleteArchiveUpload();
+    const cap = new Transform({ transform(chunk, _encoding, next) {
+      bytes += chunk.length;
+      if (bytes > expectedBytes) next(new IncompleteArchiveUpload());
+      else next(null, chunk);
+    } });
+    await pipeline(source, cap, createWriteStream(path, { flags: "wx", mode: 0o600 }), { signal });
+    if (bytes !== expectedBytes) throw new IncompleteArchiveUpload();
+  } finally { source.destroy(); }
 }
 
 export async function readStagedPhoto(key: string, expectedBytes: number): Promise<Buffer> {

@@ -1,11 +1,6 @@
 # Portable collection archives (#17)
 
-Local implementation of [#17](https://github.com/iamthatbenj/item_indexer/issues/17).
-The operator authorized a local commit, subject to the required staged Pi review.
-No push, production migration, deployment or provider change is authorized or performed.
-The new additive **0011_portable_archives.sql** is local only and must precede any
-approved auto-deploying push. Existing #16 code remains compatible with the added
-tables. No source records are rewritten and no capture pause is required.
+[#17](https://github.com/iamthatbenj/item_indexer/issues/17) shipped as `d7a49f5` after the operator reported production migration **0011_portable_archives.sql** complete. Vercel confirmed deployment, and the operator confirmed that a hosted download passed the offline verifier. This does not establish every mobile or provider check. Existing #16 code remains compatible with the added tables. No source records are rewritten and no capture pause is required. See the separate [archive preflight runbook](archive-preflight.md) for #18.
 
 ## Format and preservation boundary
 
@@ -208,7 +203,7 @@ new grants; private candidates; publication/membership faults; ambiguous concurr
 requests; leases/attempt caps; capacity/expiry/discard; schema rollback/reruns; offline
 integrity rejection; and mobile keyboard download. These are completed local checks, not authenticated hosted acceptance or a claim of representative cloud throughput/cost.
 
-## Rollout and rollback (not approved/performed)
+## Rollout checklist and rollback
 
 1. Review format, attribution/privacy semantics, actual ZIPs and resource limits.
    Check the agreed database backup before schema changes. Apply additive migration

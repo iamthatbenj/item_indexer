@@ -44,6 +44,10 @@ test.afterEach(async ({ page }) => {
 });
 test.afterAll(() => { db.close(); storage.client.destroy(); });
 const endpoint = (collection: string) => collection + "/archive/requests";
+const preflightRoute = "/archive-preflight/check";
+const preflightInput = (page: Page) => page.getByLabel("Portable archive ZIP");
+const preflightSubmit = (page: Page) => page.getByRole("button", { name: "Upload and validate" });
+const liveRows = async () => (await db.execute("SELECT (SELECT count(*) FROM collections) AS collections, (SELECT count(*) FROM memberships) AS memberships, (SELECT count(*) FROM items) AS items")).rows[0];
 async function quiesce(...pages: Page[]) { await Promise.all(pages.map(async page => { await page.goto("/"); await page.waitForLoadState("networkidle"); })); }
 async function capture(request: APIRequestContext, collection: string, itemId?: string, file = "small.png") {
   const bytes = await readFile(`tests/fixtures/photos/${file}`), id = randomUUID();
@@ -320,6 +324,14 @@ test("representative retained-image archives stay independent of thumbnails and 
   expect(archive.data.photos.filter((p: { width: number }) => p.width === 3200)).toHaveLength(20);
   expect(archive.bytes.length).toBeGreaterThan(photo.length * 20);
   console.log(JSON.stringify({ archiveItems: 20, activePhotos: 21, mainPhotoBytes: photo.length, zipBytes: archive.bytes.length, generationDownloadAndVerificationMs: Date.now() - started }));
+  await page.goto("/archive-preflight");
+  const checkStarted = Date.now();
+  await preflightInput(page).setInputFiles(info.outputPath("representative.zip"));
+  await expect(preflightSubmit(page)).toBeEnabled(); await preflightSubmit(page).click();
+  const preview = page.getByRole("region", { name: "Supported archive" });
+  await expect(preview).toBeVisible({ timeout: 62_000 });
+  await expect(preview.locator("dl > div").filter({ has: page.getByText("Retained files (photos and thumbnails)", { exact: true }) }).locator("dd")).toHaveText("42");
+  console.log(JSON.stringify({ preflightItems: 20, activePhotos: 21, zipBytes: archive.bytes.length, previewMs: Date.now() - checkStarted }));
 });
 
 test("long escaped labels and archive controls remain usable by keyboard on mobile", async ({ page }, info) => {
@@ -332,4 +344,100 @@ test("long escaped labels and archive controls remain usable by keyboard on mobi
   const download = page.waitForEvent("download"); await page.getByRole("link", { name: "Download private archive ZIP" }).focus(); await page.keyboard.press("Enter");
   await (await download).saveAs(info.outputPath("mobile.zip"));
   expect(JSON.parse((await run("python3", ["assets/portable-archive/verify.py", info.outputPath("mobile.zip")])).stdout).valid).toBe(true);
+});
+
+test("preflight previews a real exported ZIP without creating a collection or retaining a readable upload", async ({ page }, info) => {
+  const name = "<script>window.previewExecuted=1</script> 家族 " + "W".repeat(60);
+  const item = await family(page, name);
+  const aunt = await person(page.request, item.collection, "Aunt");
+  await story(page.request, item.path, aunt, "Her own version of the story.");
+  expect((await post(page.request, item.path + "/details", { version: "1", name: "Bowl", description: "Shared details", currentKeeper: aunt })).status()).toBe(200);
+  const id = await job(page.request, item.collection); await terminal(item.collection, id);
+  const path = info.outputPath("source.zip"); await artifact(page.request, item.collection, id, path);
+  const original = await liveRows();
+  await page.setViewportSize({ width: 375, height: 812 }); await page.goto("/");
+  await page.getByRole("link", { name: "Check a portable archive" }).click();
+  const started = Date.now();
+  await preflightInput(page).setInputFiles(path);
+  await expect(preflightSubmit(page)).toBeEnabled(); await preflightSubmit(page).focus(); await page.keyboard.press("Enter");
+  const preview = page.getByRole("region", { name: "Supported archive" });
+  await expect(preview).toContainText("Validation passed for format 1.0", { timeout: 62_000 });
+  await expect(preview).toContainText(name);
+  for (const [label, value] of [["Items", 1], ["People", 1], ["Stories", 1], ["Edit history entries", 1], ["Retained files (photos and thumbnails)", 2]] as const) {
+    await expect(preview.locator("dl > div").filter({ has: page.getByText(label, { exact: true }) }).locator("dd")).toHaveText(String(value));
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && !(window as Window & { previewExecuted?: number }).previewExecuted)).toBe(true);
+  expect(await liveRows()).toEqual(original);
+  const staged = await storage.client.send(new ListObjectsV2Command({ Bucket: storage.bucket, Prefix: "staging/preflight/" })); expect(staged.Contents ?? []).toHaveLength(0);
+  console.log(JSON.stringify({ preflightItems: 1, previewMs: Date.now() - started }));
+});
+
+for (const variants of [["missing", "altered", "dangling", "version"], ["path", "duplicate", "permission", "history"]]) {
+  test(`preflight rejects invalid ZIPs (${variants.join(", ")}) instead of offering a partial preview`, async ({ page }, info) => {
+    const item = await family(page);
+    const id = await job(page.request, item.collection); await terminal(item.collection, id);
+    const path = info.outputPath("source.zip"); await artifact(page.request, item.collection, id, path);
+    const original = await liveRows();
+    await page.goto("/archive-preflight");
+    for (const mutation of variants) {
+      const changed = info.outputPath(`${mutation}.zip`);
+      await run("python3", ["tests/support/archive-mutations.py", path, changed, mutation]);
+      await preflightInput(page).setInputFiles(changed);
+      await expect(preflightSubmit(page)).toBeEnabled(); await preflightSubmit(page).click();
+      await expect(page.locator("main").getByRole("alert")).toContainText("Archive rejected", { timeout: 62_000 });
+      await expect(page.getByRole("heading", { name: "Supported archive" })).toHaveCount(0);
+    }
+    expect(await liveRows()).toEqual(original);
+  });
+}
+
+test("preflight enforces approval, account ownership, size and private upload authorization", async ({ page, request, browser }) => {
+  const item = await family(page);
+  const recipient = await browser.newContext();
+  try {
+    const member = await recipient.newPage();
+    const invitation = await invite(page, item.collection, "relative@example.com");
+    await signIn(member, "relative@example.com"); await accept(member, invitation, "Archive family");
+    await member.goto("/"); await expect(member.getByRole("link", { name: "Check a portable archive" })).toHaveCount(0);
+    expect((await member.request.get("/archive-preflight")).status()).toBe(404);
+    expect((await post(member.request, preflightRoute, { action: "prepare", size: "2" })).status()).toBe(403);
+    expect((await post(request, preflightRoute, { action: "prepare", size: "2" })).status()).toBe(401);
+    expect((await post(page.request, preflightRoute, { action: "prepare", accountId: item.account, size: "268435457" })).status()).toBe(413);
+    const res = await post(page.request, preflightRoute, { action: "prepare", accountId: item.account, size: "2" }); expect(res.status()).toBe(200);
+    const { ticket, uploadUrl } = await res.json();
+    expect(new URL(uploadUrl).searchParams.get("X-Amz-SignedHeaders")).toContain("content-length");
+    const unsigned = new URL(uploadUrl); unsigned.search = "";
+    expect((await request.get(unsigned.toString())).ok()).toBe(false);
+    expect((await post(page.request, preflightRoute, { action: "validate", accountId: item.account, ticket })).status()).toBe(409);
+    await member.getByRole("button", { name: "Sign out" }).click();
+    await expect(member.getByLabel("Email address", { exact: true })).toBeVisible();
+    await signIn(member, "other-founder@example.com", true);
+    const other = (await (await member.request.get("/auth/account")).json()).id;
+    expect((await post(member.request, preflightRoute, { action: "validate", accountId: other, ticket })).status()).toBe(409);
+    const original = await liveRows();
+    await quiesce(page, member);
+    await db.execute("DELETE FROM approved_founders WHERE email='founder@example.com'");
+    expect((await post(page.request, preflightRoute, { action: "validate", accountId: item.account, ticket })).status()).toBe(403);
+    expect(await liveRows()).toEqual(original);
+  } finally { await recipient.close(); }
+});
+
+test("an interrupted preflight displays no result and allows deliberate retry", async ({ page }, info) => {
+  const item = await family(page);
+  const id = await job(page.request, item.collection); await terminal(item.collection, id);
+  const path = info.outputPath("source.zip"); await artifact(page.request, item.collection, id, path);
+  const original = await liveRows();
+  await page.goto("/archive-preflight");
+  const intercept = async (route: import("@playwright/test").Route) => {
+    const body = new URLSearchParams(route.request().postData() ?? "");
+    if (body.get("action") === "validate") await route.abort(); else await route.continue();
+  };
+  await page.route("**/archive-preflight/check", intercept);
+  await preflightInput(page).setInputFiles(path); await expect(preflightSubmit(page)).toBeEnabled(); await preflightSubmit(page).click();
+  await expect(page.locator("main").getByRole("alert")).toContainText("Check not completed");
+  await expect(page.getByRole("heading", { name: "Supported archive" })).toHaveCount(0);
+  await page.unroute("**/archive-preflight/check", intercept);
+  await preflightSubmit(page).click();
+  await expect(page.getByRole("heading", { name: "Supported archive" })).toBeVisible({ timeout: 62_000 });
+  expect(await liveRows()).toEqual(original);
 });
