@@ -42,6 +42,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
     <section className="card" aria-labelledby="belongings-heading">
       <h2 id="belongings-heading">Belongings</h2>
       <SearchForm collectionPath={`/collections/${id}`} />
+      <p><a href={`/collections/${id}/search`}>Browse and filter belongings</a></p>
       {items.length === 0 ? <p>No saved belongings yet. Start with one photo.</p> : <ul className="draft-grid">{items.map(item => <li key={item.id}>
         <Link href={`/collections/${id}/items/${item.id}`}>
           <img src={`/collections/${id}/items/${item.id}/photo?size=thumbnail`} alt={`Photo of ${item.name || "an untitled belonging"}`} loading="lazy" width={240} height={240} />

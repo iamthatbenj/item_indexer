@@ -74,9 +74,14 @@ test("results and thumbnail grants are collection-scoped and stop after membersh
   const item = await capture(page.request, shared);
   const other = await createCollection(page, "Hidden search family");
   const foreign = await capture(page.request, other);
+  const foreignKeeper = randomUUID();
+  expect((await post(page.request, `${other}/people/records`, { id: foreignKeeper, name: "Private keeper", note: "" })).status()).toBe(200);
   for (const [path, name] of [[item, "Shared needle"], [foreign, "Hidden needle"]]) {
     expect((await post(page.request, `${path}/details`, { version: "1", name, description: "Family object" })).status()).toBe(200);
   }
+  const details = await post(page.request, `${foreign}/details`, { version: "2", name: "Hidden needle", description: "Family object", categoryName: "Private category", locationName: "Private location", currentKeeper: foreignKeeper });
+  expect(details.status()).toBe(200);
+  const foreignOptions = await (await page.request.get(`${foreign}/details?choices=1`)).json();
   const invitation = await invite(page, shared, "search-relative@example.com");
   const context = await browser.newContext();
   try {
@@ -89,6 +94,17 @@ test("results and thumbnail grants are collection-scoped and stop after membersh
     await expect(results(member)).toContainText("Shared needle");
     await expect(member.locator("main")).not.toContainText("Hidden needle");
     expect((await member.request.get(searchUrl(other, "needle"))).status()).toBe(404);
+    for (const [key, id, label] of [["category", foreignOptions.category[0].id, "Category"], ["location", foreignOptions.location[0].id, "Location"], ["keeper", foreignKeeper, "Current keeper"]]) {
+      const invalid = await member.goto(searchUrl(shared, "needle") + `&${key}=${id}`);
+      expect(invalid?.status()).toBe(200);
+      await expect(member.locator("main").getByRole("alert")).toContainText(`Unavailable filters: ${label}`);
+      await expect(results(member)).toHaveCount(0);
+      expect(await invalid?.text()).not.toMatch(/Private (keeper|category|location)|Hidden needle/);
+    }
+    await member.goto(searchUrl(shared, "needle") + "&status=draft&status=complete");
+    await expect(member.locator("main").getByRole("alert")).toContainText("Unavailable filters: Draft status");
+    await expect(results(member)).toHaveCount(0);
+    await member.goto(searchUrl(shared, "needle"));
     expect((await member.request.get(`${foreign}/photo?size=thumbnail`, { maxRedirects: 0 })).status()).toBe(404);
     expect((await member.request.get(`${item}/photo?size=thumbnail`, { maxRedirects: 0 })).status()).toBe(307);
     expect((await request.get(`${item}/photo?size=thumbnail`, { maxRedirects: 0 })).status()).toBe(401);
@@ -98,6 +114,73 @@ test("results and thumbnail grants are collection-scoped and stop after membersh
     await expect(member.locator("main")).not.toContainText("Shared needle");
     expect((await member.request.get(`${item}/photo?size=thumbnail`, { maxRedirects: 0 })).status()).toBe(404);
   } finally { await context.close(); }
+});
+
+test("members combine browse filters with search and can clear them", async ({ page }) => {
+  await signIn(page, "filter-founder@example.com", true);
+  const collection = await createCollection(page, "Filter family");
+  const item = await capture(page.request, collection), other = await capture(page.request, collection);
+  const keeper = randomUUID();
+  expect((await post(page.request, `${collection}/people/records`, { id: keeper, name: "Jo", note: "" })).status()).toBe(200);
+  expect((await post(page.request, `${item}/details`, { version: "1", name: "Cedar trunk", description: "With a clasp", currentKeeper: keeper, categoryName: "Furniture", locationName: "Attic" })).status()).toBe(200);
+  expect((await post(page.request, `${other}/details`, { version: "1", name: "Cedar bowl", description: "", categoryName: "Furniture" })).status()).toBe(200);
+  await page.goto(collection);
+  await page.getByRole("link", { name: "Browse and filter belongings" }).click();
+  await expect(results(page)).toContainText("2 belongings");
+  await page.getByLabel("Category", { exact: true }).selectOption({ label: "Furniture" });
+  await page.getByLabel("Current keeper", { exact: true }).selectOption(keeper);
+  await page.getByLabel("Location", { exact: true }).selectOption({ label: "Attic" });
+  await page.getByLabel("Draft status", { exact: true }).selectOption("complete");
+  await search(page, "CEDAR");
+  await expect(results(page)).toContainText("1 belonging");
+  await expect(results(page).getByRole("link", { name: /Cedar trunk/ })).toHaveAttribute("href", item);
+  await page.getByRole("link", { name: "Clear filters" }).click();
+  await expect(results(page)).toContainText("2 belongings");
+  await expect(page.getByRole("searchbox")).toHaveValue("CEDAR");
+  await page.getByLabel("Current keeper", { exact: true }).selectOption("unassigned");
+  await page.getByLabel("Location", { exact: true }).selectOption("unassigned");
+  await page.getByLabel("Draft status", { exact: true }).selectOption("draft");
+  await search(page, "");
+  await expect(results(page).getByRole("link", { name: /Cedar bowl.*Draft item/ })).toHaveAttribute("href", other);
+  await expect(results(page).getByRole("listitem")).toHaveCount(1);
+});
+
+test("filters reflect renamed and merged labels and changed keeper assignments", async ({ page }) => {
+  await signIn(page, "filter-updates@example.com", true);
+  const collection = await createCollection(page, "Updated filters family");
+  const first = await capture(page.request, collection), second = await capture(page.request, collection);
+  const keeper = randomUUID();
+  expect((await post(page.request, `${collection}/people/records`, { id: keeper, name: "Jo", note: "Dad’s side" })).status()).toBe(200);
+  const save = (path: string, version: string, extra: Record<string, string>) => post(page.request, `${path}/details`, { version, name: path === first ? "Red cup" : "Blue cup", description: "Family ceramics", ...extra });
+  expect((await save(first, "1", { categoryName: "Cups", currentKeeper: keeper })).status()).toBe(200);
+  expect((await save(second, "1", { categoryName: "Mugs" })).status()).toBe(200);
+  const options = (await (await page.request.get(`${first}/details?choices=1`)).json()).category as { id: string; name: string }[];
+  const source = options.find(choice => choice.name === "Cups")!.id, target = options.find(choice => choice.name === "Mugs")!.id;
+  const { id: accountId } = await (await page.request.get("/auth/account")).json();
+  const operations = `${collection}/labels/operations`;
+  async function changeLabel(fields: Record<string, string>) {
+    const input = { accountId, kind: "category", ...fields };
+    const preview = await post(page.request, operations, { ...input, phase: "preview" });
+    expect(preview.status()).toBe(200);
+    expect((await post(page.request, operations, { ...input, phase: "apply", token: (await preview.json()).token })).status()).toBe(200);
+  }
+  await changeLabel({ action: "rename", source: target, name: "Drinking vessels" });
+  await page.goto(`${collection}/search?category=${target}&keeper=${keeper}`);
+  await expect(page.getByLabel("Category", { exact: true }).locator("option:checked")).toHaveText("Drinking vessels");
+  await expect(results(page)).toContainText("0 belongings");
+  await expect(results(page)).toContainText("No belongings match these filters.");
+  await changeLabel({ action: "merge", source, target });
+  await page.reload();
+  await expect(results(page).getByRole("link", { name: /Red cup/ })).toHaveAttribute("href", first);
+  await expect(page.getByLabel("Category", { exact: true }).getByRole("option", { name: "Cups", exact: true })).toHaveCount(0);
+  await page.goto(`${collection}/search?category=${source}`);
+  await expect(page.locator("main").getByRole("alert")).toContainText("Unavailable filters: Category");
+  await expect(results(page)).toHaveCount(0);
+  expect((await save(first, "3", { currentKeeper: "" })).status()).toBe(200);
+  await page.goto(`${collection}/search?category=${target}&keeper=${keeper}`);
+  await expect(results(page)).toContainText("0 belongings");
+  await page.goto(`${collection}/search?category=${target}&keeper=unassigned`);
+  await expect(results(page)).toContainText("2 belongings");
 });
 
 test("search pages are bounded and stable for unchanged results", async ({ page }) => {
@@ -114,13 +197,25 @@ test("search pages are bounded and stable for unchanged results", async ({ page 
   // These fixture entries have metadata but no backing blobs. The first test
   // checks real private thumbnail delivery independently.
   await page.route("**/photo?size=thumbnail", route => route.abort());
-  await page.goto(searchUrl(collection, "paged match"));
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto(searchUrl(collection, "paged match") + "&status=complete&keeper=unassigned");
+  await expect(results(page)).toContainText("25 belongings");
   await expect(results(page).getByRole("listitem")).toHaveCount(24);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
   await expect(results(page).getByRole("link", { name: /Paged match 24.*Complete item/ })).toBeVisible();
   await page.getByRole("link", { name: "Next results" }).click();
   await expect(results(page).getByRole("listitem")).toHaveCount(1);
   await expect(results(page).getByRole("link", { name: /Paged match 0.*Complete item/ })).toBeVisible();
   await expect(page.getByRole("link", { name: "Next results" })).toHaveCount(0);
+  await expect(page.getByLabel("Draft status", { exact: true })).toHaveValue("complete");
+  await expect(page.getByLabel("Current keeper", { exact: true })).toHaveValue("unassigned");
+  const filteredPage = page.url();
+  await results(page).getByRole("link", { name: /Paged match 0.*Complete item/ }).click();
+  await expect(page.getByRole("heading", { name: "Paged match 0", exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(filteredPage);
+  await expect(page.getByRole("searchbox")).toHaveValue("paged match");
+  await expect(results(page)).toContainText("25 belongings");
   await page.getByRole("link", { name: "Previous results" }).click();
   await expect(results(page).getByRole("listitem")).toHaveCount(24);
   await page.goto(searchUrl(collection, "paged match", 3));
