@@ -4,6 +4,7 @@ import { currentAccount } from "@/server/auth";
 import { getCollection, listCollections } from "@/server/collections";
 import { listItems } from "@/server/items";
 import PhotoCapture from "./photo-capture";
+import SearchForm from "./search/search-form";
 
 export default async function Collection({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ invite?: string; membership?: string }> }) {
   const account = await currentAccount();
@@ -40,6 +41,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
     <PhotoCapture key={`${account.id}:${id}`} accountId={account.id} collectionId={id} />
     <section className="card" aria-labelledby="belongings-heading">
       <h2 id="belongings-heading">Belongings</h2>
+      <SearchForm collectionPath={`/collections/${id}`} />
       {items.length === 0 ? <p>No saved belongings yet. Start with one photo.</p> : <ul className="draft-grid">{items.map(item => <li key={item.id}>
         <Link href={`/collections/${id}/items/${item.id}`}>
           <img src={`/collections/${id}/items/${item.id}/photo?size=thumbnail`} alt={`Photo of ${item.name || "an untitled belonging"}`} loading="lazy" width={240} height={240} />

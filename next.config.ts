@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "X-Frame-Options", value: "DENY" },
       { key: "Content-Security-Policy", value: "frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'" },
-    ] }];
+    ] }, { source: "/collections/:id/search", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] }];
   },
 };
 
