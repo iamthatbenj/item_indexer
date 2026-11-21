@@ -33,6 +33,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
       <p>All members have equal editing permissions. Administrators manage invitations and access, not editorial authority.</p>
     </section>
     <p><Link href={`/collections/${id}/people`}>Manage people and current keepers</Link></p>
+    <p><Link href={`/collections/${id}/labels`}>Manage categories and locations</Link></p>
     <p><Link href={`/collections/${id}/inventory`}>Download a compact inventory PDF</Link></p>
     <p><Link href={`/collections/${id}/catalogue`}>Download an illustrated family catalogue</Link></p>
     <p><Link href={`/collections/${id}/archive`}>Download a portable family archive</Link></p>
@@ -44,6 +45,7 @@ export default async function Collection({ params, searchParams }: { params: Pro
           <img src={`/collections/${id}/items/${item.id}/photo?size=thumbnail`} alt={`Photo of ${item.name || "an untitled belonging"}`} loading="lazy" width={240} height={240} />
           <span>{item.name || "Untitled belonging"} — {item.status === "complete" ? "Complete item" : "Draft item"}</span>
         </Link>
+        {(item.category || item.location) && <p className="story-text">{[item.category && `Category: ${item.category}`, item.location && `Location: ${item.location}`].filter(Boolean).join(" · ")}</p>}
       </li>)}</ul>}
     </section>
     <nav className="card" aria-label="Switch family collection">

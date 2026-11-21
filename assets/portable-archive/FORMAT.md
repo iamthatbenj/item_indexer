@@ -1,4 +1,4 @@
-# Family Belongings portable archive — formats 1.0–1.2
+# Family Belongings portable archive — formats 1.0–1.3
 
 This ZIP is a private, self-contained snapshot, not an invitation, login backup,
 permission grant, valuation, or verified historical account. Keep copies private.
@@ -9,7 +9,7 @@ of camera originals. Hidden camera metadata was stripped during initial retentio
 
 ## Contents and integrity
 
-- `manifest.json`: `format` = `family-belongings`, `version` = `1.0`, `1.1`, or `1.2`, `snapshot`
+- `manifest.json`: `format` = `family-belongings`, `version` = `1.0`, `1.1`, `1.2`, or `1.3`, `snapshot`
   equal to data.json's snapshot, and `files`, a complete list of every other ZIP
   member. Each entry has a relative `path`, exact uncompressed `bytes`, and
   lowercase hexadecimal SHA-256 `sha256` of those exact bytes.
@@ -44,6 +44,8 @@ unique relative POSIX file paths (no absolute paths, backslashes or `..` segment
 Format 1.1 adds exactly one field to `data.json`: `origins`, an array of up to 10,202 entries with `record_type`, `record_id`, `source_collection_id`, and `source_record_id`. Each entry refers to a record in this archive, keyed uniquely by record type and local record ID. `record_type` is `collection` or the corresponding record array name. An origin entry for the collection is required. Local records without an origin were not imported into this collection; their origin namespace is this archive’s own collection. Origin labels are claimed provenance, never access grants or live links. A subsequent restore gives records new local IDs and retains the origin labels rather than replacing them. The manifest and data versions must match; use the verifier bundled with the archive.
 
 Format 1.2 additionally has `categories` and `locations`, each with records containing only `id` and `name`. Item and item-revision rows each add nullable `category_id` and `location_id` pointing into the respective arrays. Labels are collection-scoped, NFC-normalized after trimming ECMAScript WhiteSpace and LineTerminator characters (including U+FEFF, not U+0085), at most 100 UTF-16 code units, contain no ASCII control characters, and are unique within their kind by NFC-normalized lowercase name. They grant no permissions. Format 1.2 may have an empty `origins` array if the collection was not restored, and otherwise preserves label origins by record type. The 10,000 domain record bound includes label rows; the same requester allowance as in 1.1 applies.
+
+Format 1.3 adds `merged_into_id` to each category and location record. It is null for an active label; otherwise it must point directly to an active label of the same kind within the archive. Retired labels stay available to historical item revisions but may not be assigned on current items or reused by name. Restore remaps both sides of the reference to fresh IDs. Later merges retarget retired aliases to the final active destination, not to intermediate retired labels.
 
 `data.json` has `format`, `version`, `snapshot`, `collection`, `contributors`,
 `items`, `people`, `stories`, `photos`, `item_revisions`, `person_revisions` and

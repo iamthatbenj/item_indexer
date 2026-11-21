@@ -11,12 +11,14 @@ export class ItemEditError extends Error {
 
 export async function listItems(accountId: string, collectionId: string) {
   const result = await database().execute({
-    sql: `SELECT i.id, i.name, i.status FROM items i JOIN memberships m ON m.collection_id=i.collection_id
+    sql: `SELECT i.id, i.name, i.status, c.name AS category_name, l.name AS location_name FROM items i JOIN memberships m ON m.collection_id=i.collection_id
+          LEFT JOIN item_category_labels c ON c.id=i.category_id AND c.collection_id=i.collection_id
+          LEFT JOIN item_location_labels l ON l.id=i.location_id AND l.collection_id=i.collection_id
           WHERE i.collection_id=? AND m.account_id=? AND EXISTS (
             SELECT 1 FROM item_photos p WHERE p.item_id=i.id AND p.removed_at IS NULL
           ) ORDER BY i.created_at DESC, i.id`, args: [collectionId, accountId],
   });
-  return result.rows.map(row => ({ id: String(row.id), name: String(row.name), status: String(row.status) }));
+  return result.rows.map(row => ({ id: String(row.id), name: String(row.name), status: String(row.status), category: row.category_name ? String(row.category_name) : null, location: row.location_name ? String(row.location_name) : null }));
 }
 
 export async function getItem(accountId: string, collectionId: string, id: string) {

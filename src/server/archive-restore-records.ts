@@ -54,9 +54,10 @@ export function restorePlan(data: ArchiveData, attempt: string) {
       add("accounts", "id email created_at historical_email", [id, `archive-credit:${id}`, now, row.email]);
       origin("contributors", id, row.id);
     }
-    for (const group of archiveLabelGroups) for (const row of data[group] ?? []) {
+    // Insert active destinations before their retired labels to satisfy the self-reference.
+    for (const group of archiveLabelGroups) for (const row of [...(data[group] ?? [])].sort((a, b) => Number(!!a.merged_into_id) - Number(!!b.merged_into_id))) {
       const id = mapped(group, row.id);
-      add(group === "categories" ? "item_category_labels" : "item_location_labels", "id collection_id name name_key", [id, collection, row.name, String(row.name).toLowerCase().normalize("NFC")]);
+      add(group === "categories" ? "item_category_labels" : "item_location_labels", "id collection_id name name_key merged_into_id", [id, collection, row.name, String(row.name).toLowerCase().normalize("NFC"), mapped(group, row.merged_into_id ?? null)]);
       origin(group, id, row.id);
     }
     for (const [group, table, keys] of groups) for (const row of data[group]) {

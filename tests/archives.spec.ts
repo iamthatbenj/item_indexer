@@ -271,7 +271,7 @@ test("the additive version-eleven upgrade preserves prior PDF derivatives and ro
   execFileSync("node", ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
   expect((await readItems()).rows).toEqual(before);
   expect([(await db.execute("SELECT * FROM inventory_exports")).rows, (await db.execute("SELECT * FROM catalogue_exports")).rows]).toEqual(derivatives);
-  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(13);
+  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(14);
   expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0);
   const id = await job(page.request, item.collection); await terminal(item.collection, id);
 });
@@ -296,8 +296,8 @@ test("source-schema allowlists make future persistent fields require an explicit
     stories: "id item_id storyteller_id storyteller_version text version recorded_by recorded_at last_edited_by updated_at creation_hash",
     item_photos: "id item_id photo_key thumbnail_key width height photo_bytes sha256 created_at created_by removed_at removed_by",
     item_revisions: "id item_id version name description status edited_by edited_at current_keeper_id current_keeper_version category_id location_id",
-    item_category_labels: "id collection_id name name_key",
-    item_location_labels: "id collection_id name name_key",
+    item_category_labels: "id collection_id name name_key merged_into_id",
+    item_location_labels: "id collection_id name name_key merged_into_id",
     person_revisions: "id person_id version name note edited_by edited_at",
     story_revisions: "id story_id version text storyteller_id storyteller_version recorded_by recorded_at edited_by edited_at",
   };
@@ -431,7 +431,13 @@ test("a founder confirms a real archive and restores independent records, credit
   const memory = await story(page.request, source.path, teller, "The original account.");
   expect((await post(page.request, source.path + `/stories/${memory}/details`, { version: "1", text: "The edited account." })).status()).toBe(200);
   expect((await post(page.request, source.path + "/details", { version: "1", name: "Bowl", description: "Shared details", currentKeeper: teller, categoryName: "\u0085Kitchenware", locationName: "\uFEFFUpstairs cabinet\uFEFF" })).status()).toBe(200);
-  expect((await post(page.request, source.path + "/details", { version: "2", name: "Bowl", description: "Shared details", locationId: "" })).status()).toBe(200);
+  expect((await post(page.request, source.path + "/details", { version: "2", name: "Bowl", description: "Shared details", locationId: "", categoryName: "Duplicate kitchen label" })).status()).toBe(200);
+  const choices = (await (await page.request.get(source.path + "/details?choices=1")).json()).category;
+  const mergeFields = { accountId: source.account, kind: "category", action: "merge", source: choices.find((row: { name: string }) => row.name === "Duplicate kitchen label").id, target: choices.find((row: { name: string }) => row.name === "\u0085Kitchenware").id };
+  const operation = source.collection + "/labels/operations";
+  const review = await post(page.request, operation, { ...mergeFields, phase: "preview" });
+  expect(review.status()).toBe(200);
+  expect((await post(page.request, operation, { ...mergeFields, phase: "apply", token: (await review.json()).token })).status()).toBe(200);
   await quiesce(page);
   const collectionId = source.collection.split("/").pop()!;
   const credited = Array.from({ length: 199 }, (_, i) => ({ id: randomUUID(), email: `archive-contributor-${i}@example.com` }));
@@ -442,7 +448,8 @@ test("a founder confirms a real archive and restores independent records, credit
   const id = await job(page.request, source.collection); await terminal(source.collection, id);
   const path = info.outputPath("restore-source.zip"); const original = await artifact(page.request, source.collection, id, path);
   expect(original.data.contributors).toHaveLength(200);
-  expect(original.data.categories[0].name).toBe("\u0085Kitchenware");
+  const active = original.data.categories.find((row: { merged_into_id: string | null }) => row.merged_into_id === null);
+  expect(active.name).toBe("\u0085Kitchenware");
   expect(original.data.locations[0].name).toBe("Upstairs cabinet");
   await page.goto("/archive-preflight");
   await page.getByRole("checkbox", { name: /Review for restoration/ }).check();
@@ -464,13 +471,17 @@ test("a founder confirms a real archive and restores independent records, credit
   await page.goto(destination); await expect(page.getByRole("heading", { name: "Independent restoration", exact: true })).toBeVisible();
   const restoredId = await job(page.request, destination); await terminal(destination, restoredId);
   const restored = await artifact(page.request, destination, restoredId, info.outputPath("restored.zip"));
-  expect(restored.data.items[0]).toMatchObject({ name: "Bowl", description: "Shared details", version: 3, current_keeper_id: restored.data.stories[0].storyteller_id, category_id: restored.data.categories[0].id, location_id: null });
+  const restoredActive = restored.data.categories.find((row: { merged_into_id: string | null }) => row.merged_into_id === null);
+  const retired = restored.data.categories.find((row: { name: string }) => row.name === "Duplicate kitchen label");
+  expect(restored.data.items[0]).toMatchObject({ name: "Bowl", description: "Shared details", version: 4, current_keeper_id: restored.data.stories[0].storyteller_id, category_id: restoredActive.id, location_id: null });
   expect(restored.data.items[0].id).not.toBe(source.id);
-  expect(restored.verified.version).toBe("1.2");
-  expect(restored.data.categories[0].name).toBe("\u0085Kitchenware");
-  expect(restored.data.categories[0].id).not.toBe(original.data.categories[0].id);
+  expect(restored.verified.version).toBe("1.3");
+  expect(restoredActive.name).toBe("\u0085Kitchenware");
+  expect(restoredActive.id).not.toBe(active.id);
+  expect(retired.merged_into_id).toBe(restoredActive.id);
   expect(restored.data.locations[0].name).toBe("Upstairs cabinet");
-  expect(restored.data.item_revisions.find((row: { version: number }) => row.version === 2)).toMatchObject({ category_id: restored.data.categories[0].id, location_id: restored.data.locations[0].id });
+  expect(restored.data.item_revisions.find((row: { version: number }) => row.version === 2)).toMatchObject({ category_id: restoredActive.id, location_id: restored.data.locations[0].id });
+  expect(restored.data.item_revisions.find((row: { version: number }) => row.version === 3)).toMatchObject({ category_id: retired.id, location_id: null });
   const { contributors, snapshot } = restored.data;
   expect(contributors).toHaveLength(201);
   expect(snapshot.generated_by).toBe(source.account);
@@ -542,6 +553,100 @@ test("members reuse shared labels, reconcile competing edits and see labels in b
     await founderSave.click(); await page.waitForURL("**?saved=1");
     await expect.poll(async () => (await (await member.request.get(`${source.path}/details`)).json()).current.version).toBe(4);
     expect(await choices(member.request, source.path)).toEqual(shared);
+  } finally { await context.close(); }
+});
+
+test("members rename and merge shared labels with scoped review, atomic failure and repeat safety", async ({ page, browser }, info) => {
+  const familyItem = await family(page);
+  const { collection, path } = familyItem;
+  const second = `${collection}/items/${await capture(page.request, collection)}`;
+  const third = `${collection}/items/${await capture(page.request, collection)}`;
+  const change = (item: string, version: string, extra: Record<string, string>) => post(page.request, item + "/details", { version, name: "Bowl", description: "Family details", ...extra });
+  expect((await change(path, "1", { categoryName: "Dishes", locationName: "Sideboard" })).status()).toBe(200);
+  expect((await change(second, "1", { categoryName: "Dishes" })).status()).toBe(200);
+  expect((await change(third, "1", { categoryName: "Ceramics" })).status()).toBe(200);
+  const choices = async () => (await (await page.request.get(path + "/details?choices=1")).json());
+  const labels = await choices();
+  const source = labels.category.find((row: { name: string }) => row.name === "Dishes").id;
+  const target = labels.category.find((row: { name: string }) => row.name === "Ceramics").id;
+  const ep = collection + "/labels/operations";
+  const owner = { accountId: familyItem.account, kind: "category", action: "merge", source, target };
+  const preview = async () => {
+    const response = await post(page.request, ep, { ...owner, phase: "preview" });
+    expect(response.status()).toBe(200); return response.json();
+  };
+  expect((await post(page.request, ep, { ...owner, phase: "preview", target: labels.location[0].id })).status()).toBe(404);
+  expect((await post(page.request, ep, { ...owner, phase: "preview", target: source })).status()).toBe(400);
+  const other = await createCollection(page, "Other label collection");
+  const foreign = `${other}/items/${await capture(page.request, other)}`;
+  expect((await change(foreign, "1", { categoryName: "Foreign label" })).status()).toBe(200);
+  const foreignId = (await (await page.request.get(foreign + "/details?choices=1")).json()).category[0].id;
+  expect((await post(page.request, ep, { ...owner, phase: "preview", target: foreignId })).status()).toBe(404);
+  const invitePath = await invite(page, collection, "merge-member@example.com");
+  const context = await browser.newContext();
+  try {
+    const member = await context.newPage(); await signIn(member, "merge-member@example.com"); await accept(member, invitePath, "Archive family");
+    const old = await preview(); expect(old.count).toBe(2);
+    await member.getByRole("link", { name: "Manage categories and locations", exact: true }).click();
+    await member.getByLabel("Label to rename").selectOption(target);
+    await member.getByLabel("New label name").fill("Family ceramics");
+    await member.getByRole("button", { name: "Review label change" }).click();
+    await expect(member.getByRole("region", { name: "Review affected items" })).toContainText("1 item affected");
+    await member.getByRole("button", { name: "Confirm label change" }).click();
+    await expect(member.getByText("Label renamed.", { exact: true })).toBeVisible();
+    expect((await post(page.request, ep, { ...owner, phase: "apply", token: old.token })).status()).toBe(409);
+    const next = await preview();
+    await quiesce(page, member);
+    await db.execute(`CREATE TRIGGER test_label_merge_fault BEFORE UPDATE OF merged_into_id ON item_category_labels BEGIN SELECT RAISE(ABORT, 'forced label failure'); END`);
+    try { expect((await post(page.request, ep, { ...owner, phase: "apply", token: next.token })).status()).toBe(503); }
+    finally { await db.execute("DROP TRIGGER test_label_merge_fault"); }
+    expect((await preview()).count).toBe(2);
+    expect((await (await page.request.get(path + "/details")).json()).current.version).toBe(2);
+    await member.goto(collection + "/labels");
+    await member.getByLabel("Change type").selectOption("merge");
+    await member.getByLabel("Source label to retire").selectOption(source);
+    await member.getByLabel("Destination label to keep").selectOption(target);
+    await member.getByRole("button", { name: "Review label change" }).click();
+    await expect(member.getByRole("region", { name: "Review affected items" })).toContainText("2 items affected");
+    await member.getByRole("button", { name: "Confirm label change" }).click();
+    await expect(member.getByText("Labels merged.", { exact: true })).toBeVisible();
+    expect(await (await post(page.request, ep, { ...owner, phase: "apply", token: next.token })).json()).toEqual({ changed: false });
+    expect((await change(path, "2", {})).status()).toBe(409);
+    expect((await change(path, "3", { categoryId: source })).status()).toBe(400);
+    expect((await choices()).category).toEqual([{ id: target, name: "Family ceramics" }]);
+    for (const item of [path, second]) {
+      await member.goto(item + "/history");
+      await expect(member.getByRole("article", { name: "Item version 2" })).toContainText("Category: Dishes");
+      await expect(member.getByRole("article", { name: "Item version 3" })).toContainText("Category: Family ceramics");
+      await expect(member.getByRole("article", { name: "Item version 3" })).toContainText("merge-member@example.com");
+    }
+    await member.goto(path + "/history?recover=2");
+    await expect(member.getByLabel("Category (optional)")).toHaveValue(target);
+    expect((await change(second, "3", { locationName: "Cabinet" })).status()).toBe(200);
+    const locations = (await choices()).location;
+    const cabinet = locations.find((row: { name: string }) => row.name === "Cabinet").id;
+    const sideboard = locations.find((row: { name: string }) => row.name === "Sideboard").id;
+    const competing = [
+      { ...owner, kind: "location", source: sideboard, target: cabinet },
+      { ...owner, kind: "location", source: cabinet, target: sideboard },
+    ];
+    const tokens = await Promise.all(competing.map(async operation => {
+      const response = await post(page.request, ep, { ...operation, phase: "preview" });
+      expect(response.status()).toBe(200); return (await response.json()).token;
+    }));
+    const results = await Promise.all(competing.map((operation, index) => post(page.request, ep, { ...operation, phase: "apply", token: tokens[index] })));
+    expect(results.map(response => response.status()).sort()).toEqual([200, 409]);
+    expect((await choices()).location).toHaveLength(1);
+    for (const format of ["inventory", "catalogue"]) {
+      const url = `${collection}/${format}/requests`, id = randomUUID();
+      expect((await post(member.request, url, { action: "create", id })).status()).toBe(202);
+      await expect.poll(async () => (await (await member.request.get(url)).json()).jobs.find((row: { id: string }) => row.id === id)?.status, { timeout: 60_000 }).toBe("ready");
+      const grant = await member.request.get(`${url}/${id}/download`, { maxRedirects: 0 }); expect(grant.status()).toBe(302);
+      const pdf = info.outputPath(`${format}-merged.pdf`);
+      await writeFile(pdf, await (await member.request.get(grant.headers().location)).body());
+      const { stdout } = await run("pdftotext", [pdf, "-"]);
+      expect(stdout).toContain("Category: Family ceramics"); expect(stdout).not.toContain("Category: Dishes");
+    }
   } finally { await context.close(); }
 });
 

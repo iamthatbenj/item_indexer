@@ -234,7 +234,7 @@ test("existing founder records survive upgrading a version-one database and invi
   await expect(page.getByRole("heading", { name: "Existing family record", exact: true })).toBeVisible();
   expect((await db.execute("SELECT role FROM memberships")).rows[0].role).toBe("administrator");
   await invite(page, collection, "relative@example.com");
-  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(13);
+  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(14);
 });
 
 test("administrator permission is rechecked on submission and per-administrator invitations are throttled", async ({ page }) => {

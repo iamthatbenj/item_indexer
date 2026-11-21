@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify format-1.0 through format-1.2 archives offline, without extracting or executing ZIP members.
+"""Verify format-1.0 through format-1.3 archives offline, without extracting or executing ZIP members.
 Integrity is relative to the manifest, not a signature or proof of historical truth.
 Use a trusted copy of this program for archives of uncertain provenance.
 """
@@ -12,7 +12,7 @@ import sys
 import zipfile
 
 FORMAT = "family-belongings"
-VERSIONS = ("1.0", "1.1", "1.2")
+VERSIONS = ("1.0", "1.1", "1.2", "1.3")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 # ECMAScript TrimString (WhiteSpace and LineTerminator), not Python's default.
 LABEL_TRIM = "\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680" + "".join(map(chr, range(0x2000, 0x200b))) + "\u2028\u2029\u202f\u205f\u3000\ufeff"
@@ -48,7 +48,8 @@ def indexed(rows):
 
 def relationships(data, files):
     root = {"format", "version", "snapshot", "collection", "contributors", "items", "people", "stories", "photos", "item_revisions", "person_revisions", "story_revisions"}
-    labelled = data.get("version") == "1.2"
+    merged = data.get("version") == "1.3"
+    labelled = merged or data.get("version") == "1.2"
     if labelled or data.get("version") == "1.1":
         root.add("origins")
     if labelled:
@@ -68,7 +69,8 @@ def relationships(data, files):
         "story_revisions": "id story_id version text storyteller_id storyteller_version recorded_by recorded_at edited_by edited_at",
     }
     if labelled:
-        fields.update(categories="id name", locations="id name")
+        label_fields = "id name merged_into_id" if merged else "id name"
+        fields.update(categories=label_fields, locations=label_fields)
         for group in ("items", "item_revisions"):
             fields[group] += " category_id location_id"
     maps = {}
@@ -104,9 +106,17 @@ def relationships(data, files):
                 key = normalize("NFC", name.lower())
                 require(key not in names, "Duplicate label name")
                 names.add(key)
+                if merged:
+                    target = row["merged_into_id"]
+                    ref(target, group, True)
+                    require(target is None or maps[group][target]["merged_into_id"] is None, "Merge destination is not active")
         for row in data["items"] + data["item_revisions"]:
             ref(row["category_id"], "categories", True)
             ref(row["location_id"], "locations", True)
+        if merged:
+            for row in data["items"]:
+                for key, group in (("category_id", "categories"), ("location_id", "locations")):
+                    require(row[key] is None or maps[group][row[key]]["merged_into_id"] is None, "Current item uses a retired label")
     versions = set()
     for p in data["people"]:
         versions.add((p["id"], p["version"]))

@@ -15,7 +15,7 @@ export async function itemHistory(accountId: string, collectionId: string, itemI
       UNION ALL
       SELECT i.id, i.version, i.name, i.description, i.status, i.current_keeper_id, i.current_keeper_version, i.category_id, i.location_id,
         COALESCE(i.last_edited_by,i.created_by), COALESCE(i.updated_at,i.created_at) FROM accessible i
-    ) SELECT v.*, COALESCE(a.historical_email,a.email) AS editor_email, c.name AS category_name, l.name AS location_name,
+    ) SELECT v.*, COALESCE(a.historical_email,a.email) AS editor_email, c.name AS category_name, l.name AS location_name, c.merged_into_id AS category_redirect, l.merged_into_id AS location_redirect,
       CASE WHEN p.version=v.current_keeper_version THEN p.name ELSE pr.name END AS keeper_name,
       CASE WHEN p.version=v.current_keeper_version THEN p.note ELSE pr.note END AS keeper_note
       FROM versions v JOIN accounts a ON a.id=v.edited_by
@@ -29,8 +29,8 @@ export async function itemHistory(accountId: string, collectionId: string, itemI
   return result.rows.map(row => ({
     id: String(row.id), version: Number(row.version), name: String(row.name), description: String(row.description), status: String(row.status),
     currentKeeperId: row.current_keeper_id === null ? "" : String(row.current_keeper_id),
-    category: { id: row.category_id ? String(row.category_id) : "", name: row.category_name === null ? "" : String(row.category_name) },
-    location: { id: row.location_id ? String(row.location_id) : "", name: row.location_name === null ? "" : String(row.location_name) },
+    category: { id: row.category_id ? String(row.category_id) : "", name: row.category_name === null ? "" : String(row.category_name), mergedIntoId: row.category_redirect === null ? "" : String(row.category_redirect) },
+    location: { id: row.location_id ? String(row.location_id) : "", name: row.location_name === null ? "" : String(row.location_name), mergedIntoId: row.location_redirect === null ? "" : String(row.location_redirect) },
     keeperLabel: row.current_keeper_id === null ? "Not recorded" : row.keeper_name === null ? "Identifying details unavailable" : `${row.keeper_name}${row.keeper_note ? ` — ${row.keeper_note}` : ""}`,
     editorEmail: String(row.editor_email), editedAt: Number(row.edited_at),
   }));

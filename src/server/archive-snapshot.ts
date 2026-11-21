@@ -5,6 +5,7 @@ export class ArchiveError extends Error { constructor(message: string, readonly 
 export const ARCHIVE_VERSION = "1.0";
 export const ARCHIVE_ORIGINS_VERSION = "1.1";
 export const ARCHIVE_LABELS_VERSION = "1.2";
+export const ARCHIVE_MERGED_LABELS_VERSION = "1.3";
 export const archiveLabelGroups = ["categories", "locations"] as const;
 export const originGroups = ["collection", "contributors", "items", "people", "stories", "photos", "item_revisions", "person_revisions", "story_revisions", ...archiveLabelGroups] as const;
 export type ArchiveOrigin = { record_type: typeof originGroups[number]; record_id: string; source_collection_id: string; source_record_id: string };
@@ -48,8 +49,8 @@ export async function captureArchiveSnapshot(tx: Transaction, collectionId: stri
   const personRevisions = await rows("SELECT r.id,r.person_id,r.version,r.name,r.note,r.edited_by,r.edited_at FROM person_revisions r JOIN people p ON p.id=r.person_id WHERE p.collection_id=? ORDER BY r.person_id,r.version LIMIT 10001");
   const storyRevisions = await rows("SELECT r.id,r.story_id,r.version,r.text,r.storyteller_id,r.storyteller_version,r.recorded_by,r.recorded_at,r.edited_by,r.edited_at FROM story_revisions r JOIN stories s ON s.id=r.story_id JOIN items i ON i.id=s.item_id WHERE i.collection_id=? ORDER BY r.story_id,r.version LIMIT 10001");
   const photoRows = await rows("SELECT p.id,p.item_id,p.photo_key,p.thumbnail_key,p.width,p.height,p.photo_bytes,p.sha256,p.created_at,p.created_by,p.removed_at,p.removed_by FROM item_photos p JOIN items i ON i.id=p.item_id WHERE i.collection_id=? ORDER BY p.created_at,p.id LIMIT 10001");
-  const categories = await rows("SELECT id,name FROM item_category_labels WHERE collection_id=? ORDER BY id LIMIT 10001");
-  const locations = await rows("SELECT id,name FROM item_location_labels WHERE collection_id=? ORDER BY id LIMIT 10001");
+  const categories = await rows("SELECT id,name,merged_into_id FROM item_category_labels WHERE collection_id=? ORDER BY id LIMIT 10001");
+  const locations = await rows("SELECT id,name,merged_into_id FROM item_location_labels WHERE collection_id=? ORDER BY id LIMIT 10001");
   const groups = [items, people, stories, itemRevisions, personRevisions, storyRevisions, photoRows, categories, locations];
   if (items.length > 200 || people.length > 2000 || stories.length > 1000 || photoRows.filter(p => p.removed_at === null).length > 500 || groups.reduce((n, group) => n + group.length, 0) > 10000) throw limit();
   const origins = (await tx.execute({ sql: "SELECT record_type,record_id,source_collection_id,source_record_id FROM archive_origins WHERE collection_id=? ORDER BY record_type,record_id LIMIT ?", args: [collectionId, MAX_ARCHIVE_ORIGINS + 1] })).rows;
@@ -83,7 +84,9 @@ export async function captureArchiveSnapshot(tx: Transaction, collectionId: stri
     data.origins = origins.filter(row => row.record_type !== "contributors" || contributorIds.has(String(row.record_id))).map(row => ({ record_type: String(row.record_type) as ArchiveOrigin["record_type"], record_id: String(row.record_id), source_collection_id: String(row.source_collection_id), source_record_id: String(row.source_record_id) }));
   }
   if (categories.length || locations.length || [...items, ...itemRevisions].some(row => row.category_id !== null || row.location_id !== null)) {
-    data.version = ARCHIVE_LABELS_VERSION;
+    const labels = [...categories, ...locations];
+    data.version = labels.some(row => row.merged_into_id !== null) ? ARCHIVE_MERGED_LABELS_VERSION : ARCHIVE_LABELS_VERSION;
+    if (data.version === ARCHIVE_LABELS_VERSION) for (const row of labels) delete row.merged_into_id;
     data.categories = categories; data.locations = locations;
     data.origins ??= [];
   } else for (const row of [...items, ...itemRevisions]) {
@@ -130,15 +133,21 @@ export function validateArchiveRelationships(data: ArchiveData) {
   }
   const photos = index(data.photos);
   const categories = index(data.categories ?? []), locations = index(data.locations ?? []);
-  if (data.version === ARCHIVE_LABELS_VERSION) {
+  const merged = data.version === ARCHIVE_MERGED_LABELS_VERSION;
+  if (data.version === ARCHIVE_LABELS_VERSION || merged) {
     for (const group of [categories, locations]) {
       const names = [...group.values()].map(row => row.name);
       if (names.some(name => typeof name !== "string" || !name || name.length > 100 || name !== name.trim().normalize("NFC") || /[\x00-\x1f\x7f]/u.test(name))) throw invalid();
       if (new Set(names.map(name => String(name).toLowerCase().normalize("NFC"))).size !== names.length) throw invalid();
+      if (merged) for (const row of group.values()) {
+        ref(row.merged_into_id, group, true);
+        if (row.merged_into_id !== null && group.get(row.merged_into_id)?.merged_into_id !== null) throw invalid();
+      }
     }
     for (const row of [...data.items, ...data.item_revisions]) {
       ref(row.category_id, categories, true); ref(row.location_id, locations, true);
     }
+    if (merged && data.items.some(row => categories.get(row.category_id)?.merged_into_id || locations.get(row.location_id)?.merged_into_id)) throw invalid();
   }
   if (data.version !== ARCHIVE_VERSION) {
     if (!data.origins || data.origins.length > MAX_ARCHIVE_ORIGINS) throw invalid();

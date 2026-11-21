@@ -10,7 +10,7 @@ export default async function ArchivePreflight() {
   return <>
     <p><Link href="/">Back to family collections</Link></p>
     <h1>Check a portable archive</h1>
-    <p>Preview a Family Belongings format 1.0, 1.1, or 1.2 archive. A check alone creates no collection and does not prove the archive’s origin. Only explicit confirmation restores a new private collection.</p>
+    <p>Preview a Family Belongings format 1.0 through 1.3 archive. A check alone creates no collection and does not prove the archive’s origin. Only explicit confirmation restores a new private collection.</p>
     <Preflight key={account.id} accountId={account.id} />
   </>;
 }
