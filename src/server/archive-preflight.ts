@@ -4,7 +4,7 @@ import { crc32 } from "node:zlib";
 import { openPromise, type Entry, type ZipFile } from "yauzl";
 import { visit } from "jsonc-parser";
 import sharp from "sharp";
-import { ARCHIVE_VERSION, ARCHIVE_ORIGINS_VERSION, MAX_CREDITED_CONTRIBUTORS, MAX_ARCHIVE_ORIGINS, originGroups, validateArchiveRelationships, type ArchiveData } from "./archive-snapshot";
+import { ARCHIVE_VERSION, ARCHIVE_ORIGINS_VERSION, ARCHIVE_LABELS_VERSION, MAX_CREDITED_CONTRIBUTORS, MAX_ARCHIVE_ORIGINS, originGroups, validateArchiveRelationships, type ArchiveData } from "./archive-snapshot";
 import type { ArchivePreview } from "@/archive-preview";
 
 const MiB = 1024 * 1024;
@@ -61,12 +61,12 @@ function snapshot(input: unknown) {
 }
 function version(input: unknown) {
   const o = input as Fields | null;
-  check(o?.format === FORMAT && (o.version === ARCHIVE_VERSION || o.version === ARCHIVE_ORIGINS_VERSION), "Unsupported archive format or version. Choose a Family Belongings format 1.0 or 1.1 archive.");
+  check(o?.format === FORMAT && (o.version === ARCHIVE_VERSION || o.version === ARCHIVE_ORIGINS_VERSION || o.version === ARCHIVE_LABELS_VERSION), "Unsupported archive format or version. Choose a Family Belongings format 1.0, 1.1 or 1.2 archive.");
   return o.version;
 }
 function fields(name: string, row: Fields) {
   for (const [key, v] of Object.entries(row)) {
-    if (v === null && (["current_keeper_id", "current_keeper_version", "removed_by", "removed_at"].includes(key) || name === "items" && ["last_edited_by", "updated_at"].includes(key))) continue;
+    if (v === null && (["current_keeper_id", "current_keeper_version", "category_id", "location_id", "removed_by", "removed_at"].includes(key) || name === "items" && ["last_edited_by", "updated_at"].includes(key))) continue;
     if (key === "id" || key.endsWith("_id") || key.endsWith("_by")) check(id(v));
     else if (key.endsWith("_at")) check(integer(v));
     else if (key.endsWith("version")) check(integer(v, 1, 10001));
@@ -84,8 +84,10 @@ function fields(name: string, row: Fields) {
 
 function graph(input: unknown, expectedSnapshot: Fields, files: Map<string, Fields>, archiveVersion: string) {
   check(version(input) === archiveVersion, "Archive format versions disagree.");
-  const data = exact(input, `format version snapshot collection ${Object.keys(schema).join(" ")}${archiveVersion === ARCHIVE_ORIGINS_VERSION ? " origins" : ""}`);
-  if (archiveVersion === ARCHIVE_ORIGINS_VERSION) {
+  const labelled = archiveVersion === ARCHIVE_LABELS_VERSION;
+  const recordSchema = labelled ? { ...schema, items: schema.items + " category_id location_id", item_revisions: schema.item_revisions + " category_id location_id", categories: "id name", locations: "id name" } : schema;
+  const data = exact(input, `format version snapshot collection ${Object.keys(recordSchema).join(" ")}${archiveVersion !== ARCHIVE_VERSION ? " origins" : ""}`);
+  if (archiveVersion !== ARCHIVE_VERSION) {
     check(Array.isArray(data.origins) && data.origins.length <= MAX_ARCHIVE_ORIGINS, "Archive origin limits exceeded.");
     for (const value of data.origins) {
       const row = exact(value, "record_type record_id source_collection_id source_record_id");
@@ -97,11 +99,11 @@ function graph(input: unknown, expectedSnapshot: Fields, files: Map<string, Fiel
   const collection = exact(data.collection, "id name created_at");
   check(collection.id === stored.source_collection_id && text(collection.name, 120, true) && integer(collection.created_at));
   let records = 0;
-  for (const [group, keys] of Object.entries(schema)) {
+  for (const [group, keys] of Object.entries(recordSchema)) {
     const rows = data[group];
     check(Array.isArray(rows));
     if (group !== "contributors") records += rows.length;
-    check(records <= 10000 && rows.length <= ({ contributors: MAX_CREDITED_CONTRIBUTORS + (data.version === ARCHIVE_ORIGINS_VERSION ? 1 : 0), items: 200, people: 2000, stories: 1000 }[group] ?? 10000), "Archive record limits exceeded.");
+    check(records <= 10000 && rows.length <= ({ contributors: MAX_CREDITED_CONTRIBUTORS + (data.version !== ARCHIVE_VERSION ? 1 : 0), items: 200, people: 2000, stories: 1000 }[group] ?? 10000), "Archive record limits exceeded.");
     for (const row of rows) fields(group, exact(row, keys));
   }
   // Exact shape and scalar types have been checked before sharing the export graph rules.

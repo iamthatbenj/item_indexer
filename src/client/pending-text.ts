@@ -1,8 +1,9 @@
 // Browser-local input only: not a saved record, an archive, or a backup.
 import { ITEM_NAME_LIMIT, ITEM_DESCRIPTION_LIMIT } from "@/shared/item-details";
+import { ITEM_LABEL_LIMIT, itemLabelKinds, type ItemLabelInput } from "@/shared/item-labels";
 import { STORY_TEXT_LIMIT } from "@/shared/stories";
 
-export type ItemTextInput = { kind: "item"; name: string; description: string; currentKeeper: string; version: number };
+export type ItemTextInput = { kind: "item"; name: string; description: string; currentKeeper: string; labels?: ItemLabelInput; version: number };
 export type StoryTextInput = { kind: "story"; storyId: string; text: string; version: number };
 export type NewStoryTextInput = { kind: "new-story"; text: string; storyteller: string; operation: string };
 export type TextInput = ItemTextInput | StoryTextInput | NewStoryTextInput;
@@ -28,7 +29,10 @@ function valid(value: unknown): value is TextDraft {
   const input = draft.input;
   if (input.kind === "new-story") return bounded(input.text, STORY_TEXT_LIMIT) && reference(input.storyteller) && typeof input.operation === "string" && uuid.test(input.operation);
   if (!Number.isSafeInteger(input.version) || input.version < 1 || input.version >= Number.MAX_SAFE_INTEGER) return false;
-  if (input.kind === "item") return bounded(input.name, ITEM_NAME_LIMIT) && bounded(input.description, ITEM_DESCRIPTION_LIMIT) && reference(input.currentKeeper);
+  if (input.kind === "item") return bounded(input.name, ITEM_NAME_LIMIT) && bounded(input.description, ITEM_DESCRIPTION_LIMIT) && reference(input.currentKeeper) && (input.labels === undefined || !!input.labels && itemLabelKinds.every(kind => {
+    const choice = input.labels?.[kind];
+    return choice === undefined || !!choice && (choice.id === undefined || reference(choice.id)) && (choice.name === undefined || bounded(choice.name, ITEM_LABEL_LIMIT));
+  }));
   return input.kind === "story" && typeof input.storyId === "string" && uuid.test(input.storyId) && bounded(input.text, STORY_TEXT_LIMIT);
 }
 

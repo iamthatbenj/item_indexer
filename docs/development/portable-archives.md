@@ -8,7 +8,7 @@ The authoritative standalone specification is
 [`assets/portable-archive/FORMAT.md`](../../assets/portable-archive/FORMAT.md), copied
 into every ZIP with `data.json`, `manifest.json`, `verify.py` and referenced retained
 JPEG/thumbnail bytes. See [ADR 0003](../adr/0003-versioned-self-contained-portable-archives.md).
-This is a **format-1.0** contract, not a database dump or an implementation of
+The original **format-1.0** contract is not a database dump. Format 1.1 adds restoration provenance, and format 1.2 preserves [shared categories and locations](item-labels.md). Archive export does not implement
 restoration/merge/transfer. Python 3's standard library can independently validate
 and interpret it; a normal ZIP/JSON reader can inspect it without Python or the app.
 

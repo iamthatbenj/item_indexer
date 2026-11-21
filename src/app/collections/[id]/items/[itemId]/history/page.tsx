@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentAccount } from "@/server/auth";
 import { itemHistory, recoveryVersion } from "@/server/edit-history";
+import { listItemLabels } from "@/server/item-labels";
 import { listPeople } from "@/server/people";
 import HistoryCredit from "@/app/components/history-credit";
 import ItemEditor from "../item-editor";
@@ -19,7 +20,7 @@ export default async function ItemHistory({ params, searchParams }: {
   const selectedVersion = recoveryVersion((await searchParams).recover);
   const selected = selectedVersion === null ? null : history.find(entry => entry.version === selectedVersion && entry.version < current.version);
   if (selectedVersion !== null && !selected) notFound();
-  const people = selected ? await listPeople(account.id, id) : null;
+  const [people, labelChoices] = selected ? await Promise.all([listPeople(account.id, id), listItemLabels(account.id, id)]) : [null, null];
   if (selected && people === null) notFound();
   const path = `/collections/${id}/items/${itemId}`;
   return <>
@@ -29,14 +30,14 @@ export default async function ItemHistory({ params, searchParams }: {
     {selected && <section aria-labelledby="recovery-heading">
       <h2 id="recovery-heading">Recover item version {selected.version} as a new edit</h2>
       <p className="notice">Review the earlier fields below, then use Save item details deliberately. Saving checks current version {current.version}; it does not erase later history or restore photos, access, or removed records. Current keeper choices use today's names. A changed assignment records today's identifying version.</p>
-      <ItemEditor key={`${account.id}:${itemId}:${selected.version}`} scope={{ accountId: account.id, collectionId: id, itemId }} path={path} peoplePath={`/collections/${id}/people`} people={people!} initial={{ name: selected.name, description: selected.description, currentKeeperId: selected.currentKeeperId, version: current.version }} />
+      <ItemEditor key={`${account.id}:${itemId}:${selected.version}`} scope={{ accountId: account.id, collectionId: id, itemId }} path={path} peoplePath={`/collections/${id}/people`} people={people!} labelChoices={labelChoices!} initial={{ name: selected.name, description: selected.description, currentKeeperId: selected.currentKeeperId, version: current.version, labels: { category: { id: selected.category.id }, location: { id: selected.location.id } } }} />
     </section>}
     <section aria-label="Item versions">
       {history.map(entry => <article key={entry.version} className="card edit-history" aria-label={`Item version ${entry.version}`}>
         <HistoryCredit {...entry} current={entry.version === current.version} />
         <h3>Name</h3><p className="story-text">{entry.name || "Not recorded"}</p>
         <h3>Short description</h3><p className="story-text">{entry.description || "Not recorded"}</p>
-        <p>State: {entry.status}. Current keeper: {entry.keeperLabel}.</p>
+        <p>State: {entry.status}. Current keeper: {entry.keeperLabel}. Category: {entry.category.name || "Not recorded"}. Location: {entry.location.name || "Not recorded"}.</p>
         {entry.version < current.version && <Link href={`${path}/history?recover=${entry.version}`} target="_blank" rel="noopener">Review recovery of item version {entry.version} in a new tab</Link>}
       </article>)}
     </section>

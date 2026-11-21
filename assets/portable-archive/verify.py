@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify format-1.0 and format-1.1 archives offline, without extracting or executing ZIP members.
+"""Verify format-1.0 through format-1.2 archives offline, without extracting or executing ZIP members.
 Integrity is relative to the manifest, not a signature or proof of historical truth.
 Use a trusted copy of this program for archives of uncertain provenance.
 """
@@ -12,8 +12,10 @@ import sys
 import zipfile
 
 FORMAT = "family-belongings"
-VERSIONS = ("1.0", "1.1")
+VERSIONS = ("1.0", "1.1", "1.2")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
+# ECMAScript TrimString (WhiteSpace and LineTerminator), not Python's default.
+LABEL_TRIM = "\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680" + "".join(map(chr, range(0x2000, 0x200b))) + "\u2028\u2029\u202f\u205f\u3000\ufeff"
 
 
 def require(condition, message):
@@ -46,8 +48,11 @@ def indexed(rows):
 
 def relationships(data, files):
     root = {"format", "version", "snapshot", "collection", "contributors", "items", "people", "stories", "photos", "item_revisions", "person_revisions", "story_revisions"}
-    if data.get("version") == "1.1":
+    labelled = data.get("version") == "1.2"
+    if labelled or data.get("version") == "1.1":
         root.add("origins")
+    if labelled:
+        root.update(("categories", "locations"))
     require(set(data) == root and data["format"] == FORMAT and data["version"] in VERSIONS, "Unsupported data format/version/fields")
     snapshot = data["snapshot"]
     require(set(snapshot) == {"id", "captured_at", "source_collection_id", "generated_by"}, "Invalid snapshot")
@@ -62,18 +67,22 @@ def relationships(data, files):
         "person_revisions": "id person_id version name note edited_by edited_at",
         "story_revisions": "id story_id version text storyteller_id storyteller_version recorded_by recorded_at edited_by edited_at",
     }
+    if labelled:
+        fields.update(categories="id name", locations="id name")
+        for group in ("items", "item_revisions"):
+            fields[group] += " category_id location_id"
     maps = {}
     for group, names in fields.items():
         maps[group] = indexed(data[group])
         require(all(set(row) == set(names.split()) for row in data[group]), "Unsupported record fields")
     require(sum(len(data[key]) for key in fields if key != "contributors") <= 10000, "Too many records")
-    require(len(data["items"]) <= 200 and len(data["people"]) <= 2000 and len(data["stories"]) <= 1000 and len(data["contributors"]) <= (201 if data["version"] == "1.1" else 200), "Record limits exceeded")
+    require(len(data["items"]) <= 200 and len(data["people"]) <= 2000 and len(data["stories"]) <= 1000 and len(data["contributors"]) <= (201 if data["version"] != "1.0" else 200), "Record limits exceeded")
 
     def ref(value, group, nullable=False):
         require(nullable and value is None or isinstance(value, str) and value in maps[group], "Dangling record/credit reference")
 
     ref(snapshot["generated_by"], "contributors")
-    if data["version"] == "1.1":
+    if labelled or data["version"] == "1.1":
         maps["collection"] = indexed([data["collection"]])
         origins = data["origins"]
         require(isinstance(origins, list) and len(origins) <= 10202, "Invalid origin count")
@@ -84,7 +93,20 @@ def relationships(data, files):
             group, record = row["record_type"], row["record_id"]
             require(group in maps and record in maps[group] and (group, record) not in seen, "Invalid origin reference")
             seen.add((group, record))
-        require(("collection", data["collection"]["id"]) in seen, "Missing collection origin")
+        require(labelled and not origins or ("collection", data["collection"]["id"]) in seen, "Missing collection origin")
+    if labelled:
+        from unicodedata import normalize
+        for group in ("categories", "locations"):
+            names = set()
+            for row in data[group]:
+                name = row["name"]
+                require(isinstance(name, str) and 0 < len(name.encode("utf-16-le")) <= 200 and name == normalize("NFC", name.strip(LABEL_TRIM)) and not re.search(r"[\x00-\x1f\x7f]", name), "Invalid label name")
+                key = normalize("NFC", name.lower())
+                require(key not in names, "Duplicate label name")
+                names.add(key)
+        for row in data["items"] + data["item_revisions"]:
+            ref(row["category_id"], "categories", True)
+            ref(row["location_id"], "locations", True)
     versions = set()
     for p in data["people"]:
         versions.add((p["id"], p["version"]))

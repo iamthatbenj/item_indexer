@@ -1,6 +1,8 @@
 import { currentAccount } from "@/server/auth";
 import { formPost } from "@/server/http";
 import { editItem, getItem, ItemEditError } from "@/server/items";
+import { ItemLabelError, listItemLabels } from "@/server/item-labels";
+import { itemLabelKinds, type ItemLabelInput } from "@/shared/item-labels";
 import { personLabel } from "@/shared/people";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string; itemId: string }> }) {
@@ -10,9 +12,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id, itemId } = await params;
   const item = await getItem(account.id, id, itemId);
   if (!item) return Response.json({ error: "This item is unavailable." }, { status: 404, headers });
+  if (new URL(_request.url).searchParams.get("choices") === "1") return Response.json(await listItemLabels(account.id, id), { headers });
   return Response.json({ current: { version: item.version, fields: [
     { label: "Name", value: item.name }, { label: "Short description", value: item.description },
     { label: "Current keeper", value: item.currentKeeper ? personLabel(item.currentKeeper) : "Not recorded" },
+    { label: "Category", value: item.category?.name ?? "Not recorded" }, { label: "Location", value: item.location?.name ?? "Not recorded" },
   ] } }, { headers });
 }
 
@@ -28,9 +32,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         if (form.getAll(field).length !== 1) throw new ItemEditError("Submit one editing version, name, and description.");
       }
       if (form.getAll("currentKeeper").length > 1) throw new ItemEditError("Submit at most one current keeper.");
-      await editItem(account.id, id, itemId, form.get("version")!, form.get("name")!, form.get("description")!, form.has("currentKeeper") ? form.get("currentKeeper")! : undefined);
+      const labels: ItemLabelInput = {};
+      for (const kind of itemLabelKinds) {
+        const ids = form.getAll(`${kind}Id`), names = form.getAll(`${kind}Name`);
+        if (ids.length > 1 || names.length > 1) throw new ItemEditError(`Submit at most one ${kind}.`);
+        if (ids.length || names.length) labels[kind] = { id: ids[0], name: names[0] };
+      }
+      await editItem(account.id, id, itemId, form.get("version")!, form.get("name")!, form.get("description")!, form.has("currentKeeper") ? form.get("currentKeeper")! : undefined, labels);
       return Response.json({ saved: true }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
+      if (error instanceof ItemLabelError) return Response.json({ error: error.message }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
       if (error instanceof ItemEditError) return Response.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });
       throw error;
     }

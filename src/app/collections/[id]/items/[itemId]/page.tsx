@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentAccount } from "@/server/auth";
 import { getItem } from "@/server/items";
+import { listItemLabels } from "@/server/item-labels";
 import { listPeople } from "@/server/people";
 import { listStories } from "@/server/stories";
 import { personLabel } from "@/shared/people";
@@ -14,7 +15,7 @@ export default async function Item({ params, searchParams }: { params: Promise<{
   const { id, itemId } = await params;
   const item = await getItem(account.id, id, itemId);
   if (!item) notFound();
-  const people = await listPeople(account.id, id);
+  const [people, labelChoices] = await Promise.all([listPeople(account.id, id), listItemLabels(account.id, id)]);
   if (people === null) notFound();
   const stories = await listStories(account.id, id, itemId);
   const query = await searchParams;
@@ -26,9 +27,10 @@ export default async function Item({ params, searchParams }: { params: Promise<{
     <p role="status" className="notice">{query.storySaved === "1" ? "Story recorded. " : query.saved === "1" ? "Item details saved. " : ""}{item.status === "complete" ? "Complete with a photo, name, and short description. Visible to this collection’s members." : `Saved with ${item.photos.length === 1 ? "one photo" : `${item.photos.length} photos`}. This draft is visible to this collection’s members.`}</p>
     {item.description && <p className="item-description">{item.description}</p>}
     <p className="keeper-summary">Current keeper: {item.currentKeeper ? <><Link href={`/collections/${id}/people/${item.currentKeeper.id}`}>{item.currentKeeper.name}</Link>{item.currentKeeper.note ? ` — ${item.currentKeeper.note}` : ""}</> : "Not recorded"}. Keeping an item does not establish legal ownership.</p>
+    <p className="item-description">Category: {item.category?.name ?? "Not recorded"} · Location: {item.location?.name ?? "Not recorded"}</p>
     <ItemPhotos key={`${account.id}:${id}:${itemId}`} accountId={account.id} collectionId={id} itemId={itemId} name={item.name} photos={item.photos} />
     <p><Link href={`${path}/history`} target="_blank" rel="noopener">Inspect item edit history in a new tab</Link> without losing unsaved details.</p>
-    <ItemEditor key={`${account.id}:${item.id}`} scope={{ accountId: account.id, collectionId: id, itemId }} path={path} peoplePath={`/collections/${id}/people`} people={people} initial={{ name: item.name, description: item.description, version: item.version, currentKeeperId: item.currentKeeper?.id ?? "" }} />
+    <ItemEditor key={`${account.id}:${item.id}`} scope={{ accountId: account.id, collectionId: id, itemId }} path={path} peoplePath={`/collections/${id}/people`} people={people} labelChoices={labelChoices} initial={{ name: item.name, description: item.description, version: item.version, currentKeeperId: item.currentKeeper?.id ?? "", labels: { category: { id: item.category?.id ?? "" }, location: { id: item.location?.id ?? "" } } }} />
     <section aria-labelledby="stories-heading">
       <h2 id="stories-heading">Stories</h2>
       <p>Separate recollections may disagree; none is automatically the verified account.</p>

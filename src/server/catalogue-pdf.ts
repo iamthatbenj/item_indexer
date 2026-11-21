@@ -41,6 +41,7 @@ export async function renderCataloguePDF(input: Input, signal: AbortSignal, prog
       doc.outline.addItem(`${index + 1}. ${title(item).replace(/\s+/gu, " ")}`);
       paragraph(`${index + 1}. ${title(item)}${!item.name || !item.description ? " — Draft item" : ""}`, 17);
       paragraph(item.description || "No short description recorded.");
+      for (const [label, value] of [["Category", item.category], ["Location", item.location]]) if (value) paragraph(`${label}: ${value}`, 10);
       paragraph(item.keeper ? `Current keeper: ${item.keeper}\nKeeping does not establish legal ownership.` : "Current keeper: not recorded.", 10);
       for (let photo = 0; photo < item.images.length; photo++) {
         signal.throwIfAborted(); space(270);

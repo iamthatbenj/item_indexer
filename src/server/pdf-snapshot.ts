@@ -6,15 +6,17 @@ import { PDFExportError, type PDFFormat } from "./pdf-export-types";
 import { readInventoryThumbnail, readRetainedPDFImage } from "./object-storage";
 
 export type CatalogueStory = { id: string; text: string; storyteller: string; storytellerName: string; storytellerId: string; storytellerVersion: number; recorder: string; editor: string; recordedAt: number; updatedAt: number; version: number };
-export type PDFSnapshotItem = { id: string; name: string; description: string; thumbnailKey: string; keeper?: string; photos?: { key: string; bytes: number; sha256: string }[]; stories?: CatalogueStory[] };
+export type PDFSnapshotItem = { id: string; name: string; description: string; thumbnailKey: string; category?: string; location?: string; keeper?: string; photos?: { key: string; bytes: number; sha256: string }[]; stories?: CatalogueStory[] };
 export type PDFSnapshot = { collectionName: string; capturedAt: number; items: PDFSnapshotItem[] };
 export type PreparedPDFItem = PDFSnapshotItem & { thumbnail: Buffer; images: Buffer[] };
 const label = (name: unknown, note: unknown) => [String(name ?? "").replace(/\s+/gu, " ").trim(), String(note ?? "").replace(/\s+/gu, " ").trim()].filter(Boolean).join(" — ");
 
 export async function capturePDFSnapshot(tx: Transaction, format: PDFFormat, collectionId: string, collectionName: string, capturedAt: number): Promise<PDFSnapshot> {
-  const rows = (await tx.execute({ sql: `SELECT i.id,i.name,i.description,i.current_keeper_id,k.name AS keeper_name,k.note AS keeper_note,
+  const rows = (await tx.execute({ sql: `SELECT i.id,i.name,i.description,i.current_keeper_id,i.category_id,i.location_id,c.name AS category,l.name AS location,k.name AS keeper_name,k.note AS keeper_note,
     (SELECT p.thumbnail_key FROM item_photos p WHERE p.item_id=i.id AND p.removed_at IS NULL ORDER BY p.created_at,p.id LIMIT 1) AS thumbnail_key
     FROM items i LEFT JOIN people k ON k.id=i.current_keeper_id AND k.collection_id=i.collection_id
+    LEFT JOIN item_category_labels c ON c.id=i.category_id AND c.collection_id=i.collection_id
+    LEFT JOIN item_location_labels l ON l.id=i.location_id AND l.collection_id=i.collection_id
     WHERE i.collection_id=? ORDER BY i.created_at,i.id LIMIT 201`, args: [collectionId] })).rows;
   if (rows.length > 200) throw new PDFExportError("The pilot PDF supports up to 200 current items. No partial PDF was created. Contact the operator for larger-collection support.", 422);
   if (rows.some(row => !row.thumbnail_key)) throw new PDFExportError("A saved item lacks its required retained photo. Repair that record before generating a complete PDF.", 409);
@@ -43,7 +45,8 @@ export async function capturePDFSnapshot(tx: Transaction, format: PDFFormat, col
     }
   }
   const items = rows.map(row => {
-    const item: PDFSnapshotItem = { id: String(row.id), name: String(row.name), description: String(row.description), thumbnailKey: String(row.thumbnail_key) };
+    if (row.category_id && !row.category || row.location_id && !row.location) throw new PDFExportError("A saved category or location is unavailable. Repair the item before generating this PDF.", 409);
+    const item: PDFSnapshotItem = { id: String(row.id), name: String(row.name), description: String(row.description), thumbnailKey: String(row.thumbnail_key), category: row.category ? String(row.category) : undefined, location: row.location ? String(row.location) : undefined };
     if (format === "catalogue") {
       if (row.current_keeper_id && !row.keeper_name) throw new PDFExportError("A current keeper reference is unavailable. Repair the record before generating a catalogue.", 409);
       item.keeper = row.keeper_name ? label(row.keeper_name, row.keeper_note) : "";

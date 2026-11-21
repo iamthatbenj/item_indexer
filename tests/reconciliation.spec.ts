@@ -246,22 +246,30 @@ test("story edit forms enforce bounds, unique fields, origin and valid versions 
 test("populated version-seven upgrade retains story attribution, files and sessions and rejects migration failure without recording it", async ({ page }) => {
   const item = await family(page);
   const tables = ["stories", "items", "item_photos", "people", "sessions", "memberships", "accounts"];
-  const before = await Promise.all(tables.map(async table => (await db.execute(`SELECT * FROM ${table}`)).rows));
+  const legacyColumns: Partial<Record<string, string>> = {
+    items: "id,collection_id,created_by,created_at,name,description,version,last_edited_by,updated_at,status,current_keeper_id,current_keeper_version",
+    accounts: "id,email,created_at",
+  };
+  const readPreservedRows = () => Promise.all(tables.map(async table => (await db.execute(`SELECT ${legacyColumns[table] ?? "*"} FROM ${table}`)).rows));
+  const before = await readPreservedRows();
   // Quiesce browser capture reads before this out-of-process schema fixture.
   await page.goto("/");
   await removeStoryRevisionsSchema(db); await db.execute("CREATE TABLE story_revisions (marker TEXT)");
   try {
     expect(() => execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv })).toThrow();
     expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(7);
-    expect(await Promise.all(tables.map(async table => (await db.execute(`SELECT * FROM ${table}`)).rows))).toEqual(before);
-  } finally { await db.execute("DROP TABLE story_revisions"); }
-  execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
-  expect(await Promise.all(tables.map(async table => (await db.execute(`SELECT * FROM ${table}`)).rows))).toEqual(before);
+    expect(await readPreservedRows()).toEqual(before);
+  } finally {
+    await db.execute("DROP TABLE story_revisions");
+    execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
+  }
+  expect(await readPreservedRows()).toEqual(before);
+  expect((await db.execute("SELECT category_id, location_id FROM items")).rows).toEqual([{ category_id: null, location_id: null }]);
   expect(await storyHistory(item.storyId)).toHaveLength(0);
   expect((await storyEdit(page.request, item.story, "1", "First edit after upgrade.")).status()).toBe(200);
   const history = await storyHistory(item.storyId); expect(history[0]).toMatchObject({ text: "I remember this bowl at Sunday lunch.", storyteller_id: item.storyteller, recorded_by: before[0][0].recorded_by, edited_by: before[0][0].last_edited_by });
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
-  expect(await storyHistory(item.storyId)).toEqual(history); expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0); expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(12);
+  expect(await storyHistory(item.storyId)).toEqual(history); expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0); expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(13);
   const retained = await page.request.get(item.path + "/photo"); expect(retained.ok()).toBe(true); expect(retained.headers()["content-type"]).toBe("image/jpeg");
 });
 

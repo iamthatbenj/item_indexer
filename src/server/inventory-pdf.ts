@@ -4,7 +4,7 @@ import { fonts, pdfText } from "./pdf-text";
 
 export const INVENTORY_MAX_ITEMS = 200;
 export const INVENTORY_MAX_PDF_BYTES = 16 * 1024 * 1024;
-export type InventoryRow = { id: string; name: string; description: string; thumbnail: Buffer };
+export type InventoryRow = { id: string; name: string; description: string; category?: string; location?: string; thumbnail: Buffer };
 export type InventoryDocument = { collectionName: string; capturedAt: number; items: InventoryRow[] };
 // This module renders saved input only. It never fetches URLs, authorizes access,
 // chooses photos, publishes a file or interprets local unconfirmed editor text.
@@ -65,6 +65,7 @@ export async function renderInventoryPDF(input: InventoryDocument, signal: Abort
       doc.image(row.thumbnail, 40, y, { fit: [76, 76], align: "center" });
       text(`${index + 1}. ${row.name || "Untitled belonging"}${!row.name || !row.description ? " — Draft item" : ""}`, 136, y, 419, 11);
       text(row.description || "No short description recorded.", 136, doc.y + 4, 419, 10);
+      for (const [label, value] of [["Category", row.category], ["Location", row.location]]) if (value) text(`${label}: ${value}`, 136, doc.y + 4, 419, 10);
       doc.y = (pages === startPage ? Math.max(doc.y, y + 80) : doc.y) + 15;
       doc.moveTo(136, doc.y - 7).lineTo(555, doc.y - 7).strokeColor("#e0e2e5").stroke();
       await progress(index + 1);

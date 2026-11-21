@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccountScope } from "@/client/use-account-scope";
 import { discardTextDraft, textDrafts, type TextDraft } from "@/client/pending-text";
+import type { ItemLabelInput } from "@/shared/item-labels";
+
+function PendingLabel({ title, choice }: { title: string; choice: ItemLabelInput["category"] }) {
+  return <><h3>{title}</h3><p className="story-text">{choice === undefined ? "No choice retained" : choice.name?.trim() ? choice.name : choice.id ? `Existing label reference: ${choice.id}` : "Clear assignment"}</p></>;
+}
 
 function destination(draft: TextDraft) {
   const item = `/collections/${encodeURIComponent(draft.collectionId)}/items/${encodeURIComponent(draft.itemId)}`;
@@ -61,7 +66,7 @@ export default function PendingText({ accountId }: { accountId: string }) {
       {selected && <section aria-label="Selected local pending text" className="edit-history">
         <h2>Pending local input — save not confirmed</h2>
         <p>Copy this text manually if needed. A missing original record cannot be recreated through this viewer.</p>
-        {selected.input.kind === "item" ? <><h3>Name</h3><p className="story-text">{selected.input.name || "(blank)"}</p><h3>Short description</h3><p className="story-text">{selected.input.description || "(blank)"}</p><p>Original editing version: {selected.input.version}. Current keeper reference: {selected.input.currentKeeper || "Not recorded"}.</p></> : <><h3>Story</h3><p className="story-text">{selected.input.text || "(blank)"}</p>{selected.input.kind === "story" ? <p>Original editing version: {selected.input.version}.</p> : <p>Storyteller reference: {selected.input.storyteller || "Not selected"}. Original recording request: {selected.input.operation}.</p>}</>}
+        {selected.input.kind === "item" ? <><h3>Name</h3><p className="story-text">{selected.input.name || "(blank)"}</p><h3>Short description</h3><p className="story-text">{selected.input.description || "(blank)"}</p><p>Original editing version: {selected.input.version}. Current keeper reference: {selected.input.currentKeeper || "Not recorded"}.</p><PendingLabel title="Category" choice={selected.input.labels?.category} /><PendingLabel title="Location" choice={selected.input.labels?.location} /></> : <><h3>Story</h3><p className="story-text">{selected.input.text || "(blank)"}</p>{selected.input.kind === "story" ? <p>Original editing version: {selected.input.version}.</p> : <p>Storyteller reference: {selected.input.storyteller || "Not selected"}. Original recording request: {selected.input.operation}.</p>}</>}
       </section>}
     </>}
     <p className="hint">Local storage is not a backup or encrypted protection from someone controlling this browser profile. Use separate profiles on shared devices. Browser eviction, private browsing, clearing site data or losing a device can remove pending text. No background sync or full offline editing is promised.</p>

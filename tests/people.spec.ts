@@ -377,7 +377,7 @@ test("version-five upgrade preserves populated items, photos, sessions and revis
   expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0);
   await page.goto(item.path); await expect(page.getByRole("heading", { name: "Blue bowl", exact: true })).toBeVisible();
   const keeper = await person(page.request, item.collection); expect((await itemEdit(page.request, item.path, "2", keeper.id)).status()).toBe(200);
-  expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(12);
+  expect((await db.execute("SELECT name FROM schema_migrations")).rows).toHaveLength(13);
 });
 
 test("long identifying details remain escaped, labelled and usable by keyboard on mobile without horizontal overflow", async ({ page }) => {

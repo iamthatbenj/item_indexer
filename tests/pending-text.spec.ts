@@ -180,6 +180,29 @@ test("session expiry and revoked membership retain local input without restoring
   await context.close();
 });
 
+test("pending item labels can be copied after membership is revoked", async ({ page, browser }) => {
+  const item = await family(page);
+  const invitation = await invite(page, item.collection, "label-relative@example.com");
+  const context = await browser.newContext();
+  try {
+    const relative = await context.newPage();
+    await signIn(relative, "label-relative@example.com"); await accept(relative, invitation);
+    await itemEditor(relative, item.path);
+    await relative.getByLabel("New category label", { exact: true }).fill("Family serving pieces");
+    await expect.poll(async () => (await rows(relative)).map(row => row.input)).toContainEqual(expect.objectContaining({
+      kind: "item", labels: expect.objectContaining({ category: { name: "Family serving pieces" } }),
+    }));
+    const accountId = (await rows(relative))[0].accountId;
+    expect((await post(page.request, `${item.collection}/members/${accountId}`, { action: "remove", confirm: "yes" })).status()).toBe(303);
+    expect((await relative.request.get(item.path + "/details")).status()).toBe(404);
+    await relative.goto("/pending-text");
+    await relative.getByRole("button", { name: "Inspect pending copy", exact: true }).click();
+    const inspected = relative.getByRole("region", { name: "Selected local pending text", exact: true });
+    await expect(inspected).toContainText("Family serving pieces");
+    expect(await itemRow(item.id)).toMatchObject({ version: 1, category_id: null, location_id: null });
+  } finally { await context.close(); }
+});
+
 test("unavailable local storage warns before navigation but does not falsely claim local retention or server success", async ({ page }) => {
   const item = await family(page); await itemEditor(page, item.path);
   const original = await page.evaluateHandle(() => window.indexedDB);

@@ -1,5 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { resolveItemLabels } from "./item-labels";
+import type { ItemLabelInput } from "@/shared/item-labels";
 import { database, writeTransaction } from "./database";
 import { ITEM_NAME_LIMIT, ITEM_DESCRIPTION_LIMIT } from "@/shared/item-details";
 
@@ -19,8 +21,10 @@ export async function listItems(accountId: string, collectionId: string) {
 
 export async function getItem(accountId: string, collectionId: string, id: string) {
   const result = await database().execute({
-    sql: `SELECT i.id, i.name, i.description, i.version, i.status, i.current_keeper_id, k.name AS keeper_name, k.note AS keeper_note, p.id AS photo_id, p.width, p.height FROM items i JOIN item_photos p ON p.item_id=i.id
+    sql: `SELECT i.id, i.name, i.description, i.version, i.status, i.current_keeper_id, k.name AS keeper_name, k.note AS keeper_note, c.id AS category_id, c.name AS category_name, l.id AS location_id, l.name AS location_name, p.id AS photo_id, p.width, p.height FROM items i JOIN item_photos p ON p.item_id=i.id
           LEFT JOIN people k ON k.id=i.current_keeper_id AND k.collection_id=i.collection_id
+          LEFT JOIN item_category_labels c ON c.id=i.category_id AND c.collection_id=i.collection_id
+          LEFT JOIN item_location_labels l ON l.id=i.location_id AND l.collection_id=i.collection_id
           JOIN memberships m ON m.collection_id=i.collection_id WHERE i.id=? AND i.collection_id=? AND m.account_id=? AND p.removed_at IS NULL
           ORDER BY p.created_at, p.id`, args: [id, collectionId, accountId],
   });
@@ -29,11 +33,13 @@ export async function getItem(accountId: string, collectionId: string, id: strin
     id: String(row.id), name: String(row.name), description: String(row.description),
     version: Number(row.version), status: String(row.status),
     currentKeeper: row.current_keeper_id && row.keeper_name ? { id: String(row.current_keeper_id), name: String(row.keeper_name), note: String(row.keeper_note) } : null,
+    category: row.category_id ? { id: String(row.category_id), name: String(row.category_name) } : null,
+    location: row.location_id ? { id: String(row.location_id), name: String(row.location_name) } : null,
     photos: result.rows.map(photo => ({ id: String(photo.photo_id), width: Number(photo.width), height: Number(photo.height) })),
   } : null;
 }
 
-export async function editItem(accountId: string, collectionId: string, id: string, versionInput: string, nameInput: string, descriptionInput: string, keeperInput?: string) {
+export async function editItem(accountId: string, collectionId: string, id: string, versionInput: string, nameInput: string, descriptionInput: string, keeperInput?: string, labelInput: ItemLabelInput = {}) {
   const version = Number(versionInput);
   if (!/^[1-9]\d*$/.test(versionInput) || !Number.isSafeInteger(version) || version >= Number.MAX_SAFE_INTEGER) throw new ItemEditError("The editing version is invalid. Open the saved item again, keeping a copy of your text.");
   if (nameInput.length > ITEM_NAME_LIMIT || descriptionInput.length > ITEM_DESCRIPTION_LIMIT || /\0/.test(nameInput + descriptionInput)) throw new ItemEditError(`Use a name up to ${ITEM_NAME_LIMIT} characters and a short description up to ${ITEM_DESCRIPTION_LIMIT} characters, without null characters.`);
@@ -43,7 +49,7 @@ export async function editItem(accountId: string, collectionId: string, id: stri
     // The write transaction serializes competing edits and access removals.
     // Authorization does not depend on role or a caller-supplied editor identity.
     const row = (await tx.execute({
-      sql: `SELECT i.name, i.description, i.status, i.version, i.current_keeper_id, i.current_keeper_version, i.last_edited_by, i.created_by, i.updated_at, i.created_at FROM items i JOIN memberships m ON m.collection_id=i.collection_id
+      sql: `SELECT i.name, i.description, i.status, i.version, i.current_keeper_id, i.current_keeper_version, i.last_edited_by, i.created_by, i.updated_at, i.created_at, i.category_id, i.location_id FROM items i JOIN memberships m ON m.collection_id=i.collection_id
             WHERE i.id=? AND i.collection_id=? AND m.account_id=?`, args: [id, collectionId, accountId],
     })).rows[0];
     if (!row) throw new ItemEditError("This item is unavailable. Your text remains on this page.", 404);
@@ -59,15 +65,16 @@ export async function editItem(accountId: string, collectionId: string, id: stri
       if (!keeper) throw new ItemEditError("Choose a current keeper from this family collection. Your details remain on this page.");
       if (keeperId !== row.current_keeper_id) keeperVersion = keeper.version;
     } else keeperVersion = null;
+    const labels = await resolveItemLabels(tx, collectionId, labelInput, { category: row.category_id as string | null, location: row.location_id as string | null });
     // Exact repeat/no-op on the current version does not manufacture history.
-    if (row.name === name && row.description === description && row.current_keeper_id === keeperId) return;
+    if (row.name === name && row.description === description && row.current_keeper_id === keeperId && row.category_id === labels.category && row.location_id === labels.location) return;
     await tx.execute({
-      sql: "INSERT INTO item_revisions (id, item_id, version, name, description, status, edited_by, edited_at, current_keeper_id, current_keeper_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      args: [randomUUID(), id, version, String(row.name), String(row.description), String(row.status), String(row.last_edited_by ?? row.created_by), row.updated_at ?? row.created_at, row.current_keeper_id, row.current_keeper_version],
+      sql: "INSERT INTO item_revisions (id, item_id, version, name, description, status, edited_by, edited_at, current_keeper_id, current_keeper_version, category_id, location_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [randomUUID(), id, version, String(row.name), String(row.description), String(row.status), String(row.last_edited_by ?? row.created_by), row.updated_at ?? row.created_at, row.current_keeper_id, row.current_keeper_version, row.category_id, row.location_id],
     });
     const updated = await tx.execute({
-      sql: "UPDATE items SET name=?, description=?, current_keeper_id=?, current_keeper_version=?, version=version+1, last_edited_by=?, updated_at=? WHERE id=? AND version=?",
-      args: [name, description, keeperId, keeperVersion, accountId, Date.now(), id, version],
+      sql: "UPDATE items SET name=?, description=?, current_keeper_id=?, current_keeper_version=?, category_id=?, location_id=?, version=version+1, last_edited_by=?, updated_at=? WHERE id=? AND version=?",
+      args: [name, description, keeperId, keeperVersion, labels.category, labels.location, accountId, Date.now(), id, version],
     });
     if (updated.rowsAffected !== 1) throw new ItemEditError("The saved version changed. Your text remains on this page; open the latest saved item before editing again.", 409);
   });

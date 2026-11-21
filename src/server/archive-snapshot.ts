@@ -4,7 +4,9 @@ import type { Transaction } from "@libsql/client";
 export class ArchiveError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
 export const ARCHIVE_VERSION = "1.0";
 export const ARCHIVE_ORIGINS_VERSION = "1.1";
-export const originGroups = ["collection", "contributors", "items", "people", "stories", "photos", "item_revisions", "person_revisions", "story_revisions"] as const;
+export const ARCHIVE_LABELS_VERSION = "1.2";
+export const archiveLabelGroups = ["categories", "locations"] as const;
+export const originGroups = ["collection", "contributors", "items", "people", "stories", "photos", "item_revisions", "person_revisions", "story_revisions", ...archiveLabelGroups] as const;
 export type ArchiveOrigin = { record_type: typeof originGroups[number]; record_id: string; source_collection_id: string; source_record_id: string };
 export const ARCHIVE_LIMIT = 256 * 1024 * 1024;
 export type ArchiveRow = Record<string, string | number | null>;
@@ -17,6 +19,8 @@ export type ArchiveData = {
   people: ArchiveRow[]; person_revisions: ArchiveRow[]; stories: ArchiveRow[]; story_revisions: ArchiveRow[];
   photos: ArchivePhoto[];
   origins?: ArchiveOrigin[];
+  categories?: ArchiveRow[];
+  locations?: ArchiveRow[];
 };
 export type ArchiveSnapshot = { data: ArchiveData; files: { path: string; key: string; maximum: number; bytes: number | null; sha256: string | null }[] };
 const invalid = () => new ArchiveError("Saved relationships or history are incomplete. Contact the operator before exporting; no partial archive was created.", 409);
@@ -37,14 +41,16 @@ export async function captureArchiveSnapshot(tx: Transaction, collectionId: stri
       return [key, value];
     })) as ArchiveRow);
   }
-  const items = await rows("SELECT id,name,description,status,version,created_by,created_at,last_edited_by,updated_at,current_keeper_id,current_keeper_version FROM items WHERE collection_id=? ORDER BY created_at,id LIMIT 201");
+  const items = await rows("SELECT id,name,description,status,version,created_by,created_at,last_edited_by,updated_at,current_keeper_id,current_keeper_version,category_id,location_id FROM items WHERE collection_id=? ORDER BY created_at,id LIMIT 201");
   const people = await rows("SELECT id,name,note,version,created_by,created_at,last_edited_by,updated_at FROM people WHERE collection_id=? ORDER BY created_at,id LIMIT 2001");
   const stories = await rows("SELECT s.id,s.item_id,s.storyteller_id,s.storyteller_version,s.text,s.version,s.recorded_by,s.recorded_at,s.last_edited_by,s.updated_at FROM stories s JOIN items i ON i.id=s.item_id WHERE i.collection_id=? ORDER BY s.recorded_at,s.id LIMIT 1001");
-  const itemRevisions = await rows("SELECT r.id,r.item_id,r.version,r.name,r.description,r.status,r.edited_by,r.edited_at,r.current_keeper_id,r.current_keeper_version FROM item_revisions r JOIN items i ON i.id=r.item_id WHERE i.collection_id=? ORDER BY r.item_id,r.version LIMIT 10001");
+  const itemRevisions = await rows("SELECT r.id,r.item_id,r.version,r.name,r.description,r.status,r.edited_by,r.edited_at,r.current_keeper_id,r.current_keeper_version,r.category_id,r.location_id FROM item_revisions r JOIN items i ON i.id=r.item_id WHERE i.collection_id=? ORDER BY r.item_id,r.version LIMIT 10001");
   const personRevisions = await rows("SELECT r.id,r.person_id,r.version,r.name,r.note,r.edited_by,r.edited_at FROM person_revisions r JOIN people p ON p.id=r.person_id WHERE p.collection_id=? ORDER BY r.person_id,r.version LIMIT 10001");
   const storyRevisions = await rows("SELECT r.id,r.story_id,r.version,r.text,r.storyteller_id,r.storyteller_version,r.recorded_by,r.recorded_at,r.edited_by,r.edited_at FROM story_revisions r JOIN stories s ON s.id=r.story_id JOIN items i ON i.id=s.item_id WHERE i.collection_id=? ORDER BY r.story_id,r.version LIMIT 10001");
   const photoRows = await rows("SELECT p.id,p.item_id,p.photo_key,p.thumbnail_key,p.width,p.height,p.photo_bytes,p.sha256,p.created_at,p.created_by,p.removed_at,p.removed_by FROM item_photos p JOIN items i ON i.id=p.item_id WHERE i.collection_id=? ORDER BY p.created_at,p.id LIMIT 10001");
-  const groups = [items, people, stories, itemRevisions, personRevisions, storyRevisions, photoRows];
+  const categories = await rows("SELECT id,name FROM item_category_labels WHERE collection_id=? ORDER BY id LIMIT 10001");
+  const locations = await rows("SELECT id,name FROM item_location_labels WHERE collection_id=? ORDER BY id LIMIT 10001");
+  const groups = [items, people, stories, itemRevisions, personRevisions, storyRevisions, photoRows, categories, locations];
   if (items.length > 200 || people.length > 2000 || stories.length > 1000 || photoRows.filter(p => p.removed_at === null).length > 500 || groups.reduce((n, group) => n + group.length, 0) > 10000) throw limit();
   const origins = (await tx.execute({ sql: "SELECT record_type,record_id,source_collection_id,source_record_id FROM archive_origins WHERE collection_id=? ORDER BY record_type,record_id LIMIT ?", args: [collectionId, MAX_ARCHIVE_ORIGINS + 1] })).rows;
   if (origins.length > MAX_ARCHIVE_ORIGINS) throw limit();
@@ -54,7 +60,7 @@ export async function captureArchiveSnapshot(tx: Transaction, collectionId: stri
   }
   if (contributorIds.size > MAX_CREDITED_CONTRIBUTORS) throw limit();
   contributorIds.add(accountId);
-  if (!origins.length && contributorIds.size > MAX_CREDITED_CONTRIBUTORS) throw limit();
+  if (!origins.length && !categories.length && !locations.length && contributorIds.size > MAX_CREDITED_CONTRIBUTORS) throw limit();
   const contributors = (await tx.execute({ sql: `SELECT id,COALESCE(historical_email,email) AS email FROM accounts WHERE id IN (${[...contributorIds].map(() => "?").join(",")}) ORDER BY id`, args: [...contributorIds] })).rows.map(row => ({ id: String(row.id), email: String(row.email) }));
   if (contributors.length !== contributorIds.size) throw invalid();
   const files: ArchiveSnapshot["files"] = [];
@@ -75,6 +81,13 @@ export async function captureArchiveSnapshot(tx: Transaction, collectionId: stri
   if (origins.length) {
     data.version = ARCHIVE_ORIGINS_VERSION;
     data.origins = origins.filter(row => row.record_type !== "contributors" || contributorIds.has(String(row.record_id))).map(row => ({ record_type: String(row.record_type) as ArchiveOrigin["record_type"], record_id: String(row.record_id), source_collection_id: String(row.source_collection_id), source_record_id: String(row.source_record_id) }));
+  }
+  if (categories.length || locations.length || [...items, ...itemRevisions].some(row => row.category_id !== null || row.location_id !== null)) {
+    data.version = ARCHIVE_LABELS_VERSION;
+    data.categories = categories; data.locations = locations;
+    data.origins ??= [];
+  } else for (const row of [...items, ...itemRevisions]) {
+    delete row.category_id; delete row.location_id;
   }
   validateArchiveRelationships(data);
   if (Buffer.byteLength(JSON.stringify(data)) > 8 * 1024 * 1024) throw limit();
@@ -116,9 +129,20 @@ export function validateArchiveRelationships(data: ArchiveData) {
     }
   }
   const photos = index(data.photos);
-  if (data.version === ARCHIVE_ORIGINS_VERSION) {
+  const categories = index(data.categories ?? []), locations = index(data.locations ?? []);
+  if (data.version === ARCHIVE_LABELS_VERSION) {
+    for (const group of [categories, locations]) {
+      const names = [...group.values()].map(row => row.name);
+      if (names.some(name => typeof name !== "string" || !name || name.length > 100 || name !== name.trim().normalize("NFC") || /[\x00-\x1f\x7f]/u.test(name))) throw invalid();
+      if (new Set(names.map(name => String(name).toLowerCase().normalize("NFC"))).size !== names.length) throw invalid();
+    }
+    for (const row of [...data.items, ...data.item_revisions]) {
+      ref(row.category_id, categories, true); ref(row.location_id, locations, true);
+    }
+  }
+  if (data.version !== ARCHIVE_VERSION) {
     if (!data.origins || data.origins.length > MAX_ARCHIVE_ORIGINS) throw invalid();
-    const all = { collection: index([data.collection]), items, people, stories, contributors, photos, item_revisions: index(data.item_revisions), story_revisions: index(data.story_revisions), person_revisions: index(data.person_revisions) };
+    const all = { collection: index([data.collection]), items, people, stories, contributors, photos, categories, locations, item_revisions: index(data.item_revisions), story_revisions: index(data.story_revisions), person_revisions: index(data.person_revisions) };
     const seen = new Set<string>();
     for (const origin of data.origins) {
       if (!originGroups.includes(origin.record_type) || !origin.source_collection_id || !origin.source_record_id) throw invalid();
@@ -127,7 +151,7 @@ export function validateArchiveRelationships(data: ArchiveData) {
       if (seen.has(key)) throw invalid();
       seen.add(key);
     }
-    if (!seen.has(JSON.stringify(["collection", data.collection.id]))) throw invalid();
+    if ((data.version === ARCHIVE_ORIGINS_VERSION || data.origins.length) && !seen.has(JSON.stringify(["collection", data.collection.id]))) throw invalid();
   }
   ref(data.snapshot.generated_by, contributors);
   const credited = new Set<string>();
@@ -140,7 +164,7 @@ export function validateArchiveRelationships(data: ArchiveData) {
   if (credited.size > MAX_CREDITED_CONTRIBUTORS) throw invalid();
   if (contributors.size > MAX_CREDITED_CONTRIBUTORS) {
     // The only extra entry in 1.1 may be the requester, not another record credit.
-    if (data.version !== ARCHIVE_ORIGINS_VERSION || credited.has(data.snapshot.generated_by) || contributors.size !== credited.size + 1) throw invalid();
+    if (data.version === ARCHIVE_VERSION || credited.has(data.snapshot.generated_by) || contributors.size !== credited.size + 1) throw invalid();
   }
   for (const revision of data.story_revisions) {
     const current = stories.get(revision.story_id)!;

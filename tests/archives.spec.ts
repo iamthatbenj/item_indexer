@@ -15,7 +15,7 @@ const { signIn, createCollection, invite, accept } = familyJourney(db);
 const run = promisify(execFile);
 let storage: ReturnType<typeof testStorage>, observer: APIRequestContext;
 const observed = new Set<string>();
-const tables = ["archive_restore_attempts", "archive_restores", "archive_origins", "archive_export_attempts", "archive_exports", "catalogue_export_attempts", "catalogue_exports", "inventory_export_attempts", "inventory_exports", "story_revisions", "stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"];
+const tables = ["archive_restore_attempts", "archive_restores", "archive_origins", "archive_export_attempts", "archive_exports", "catalogue_export_attempts", "catalogue_exports", "inventory_export_attempts", "inventory_exports", "story_revisions", "stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "item_category_labels", "item_location_labels", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"];
 test.setTimeout(180_000);
 test.beforeAll(() => { storage = testStorage(); });
 test.beforeEach(async ({ page, request }) => {
@@ -260,7 +260,8 @@ test("the additive version-eleven upgrade preserves prior PDF derivatives and ro
     await expect.poll(async () => (await (await page.request.get(`${item.collection}/${format}/requests`)).json()).jobs[0].status).toBe("ready");
   }
   const derivatives = [(await db.execute("SELECT * FROM inventory_exports")).rows, (await db.execute("SELECT * FROM catalogue_exports")).rows];
-  const before = (await db.execute("SELECT * FROM items")).rows; await removeArchiveSchema(db);
+  const readItems = () => db.execute("SELECT id, collection_id, name, status, version, category_id, location_id FROM items");
+  const before = (await readItems()).rows; await removeArchiveSchema(db);
   await db.execute("CREATE TABLE archive_export_attempts(fault TEXT)");
   try {
     expect(() => execFileSync("node", ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv, stdio: "pipe" })).toThrow();
@@ -268,9 +269,9 @@ test("the additive version-eleven upgrade preserves prior PDF derivatives and ro
     expect((await db.execute("SELECT * FROM schema_migrations WHERE name='0011_portable_archives.sql'")).rows).toHaveLength(0);
   } finally { await db.execute("DROP TABLE archive_export_attempts"); execFileSync("node", ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv }); }
   execFileSync("node", ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
-  expect((await db.execute("SELECT * FROM items")).rows).toEqual(before);
+  expect((await readItems()).rows).toEqual(before);
   expect([(await db.execute("SELECT * FROM inventory_exports")).rows, (await db.execute("SELECT * FROM catalogue_exports")).rows]).toEqual(derivatives);
-  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(12);
+  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(13);
   expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0);
   const id = await job(page.request, item.collection); await terminal(item.collection, id);
 });
@@ -290,11 +291,13 @@ test("source-schema allowlists make future persistent fields require an explicit
   const columns: Record<string, string> = {
     collections: "id name created_at",
     accounts: "id email created_at historical_email",
-    items: "id collection_id created_by created_at name description version last_edited_by updated_at status current_keeper_id current_keeper_version",
+    items: "id collection_id created_by created_at name description version last_edited_by updated_at status current_keeper_id current_keeper_version category_id location_id",
     people: "id collection_id name note version created_by created_at creation_hash last_edited_by updated_at",
     stories: "id item_id storyteller_id storyteller_version text version recorded_by recorded_at last_edited_by updated_at creation_hash",
     item_photos: "id item_id photo_key thumbnail_key width height photo_bytes sha256 created_at created_by removed_at removed_by",
-    item_revisions: "id item_id version name description status edited_by edited_at current_keeper_id current_keeper_version",
+    item_revisions: "id item_id version name description status edited_by edited_at current_keeper_id current_keeper_version category_id location_id",
+    item_category_labels: "id collection_id name name_key",
+    item_location_labels: "id collection_id name name_key",
     person_revisions: "id person_id version name note edited_by edited_at",
     story_revisions: "id story_id version text storyteller_id storyteller_version recorded_by recorded_at edited_by edited_at",
   };
@@ -427,7 +430,8 @@ test("a founder confirms a real archive and restores independent records, credit
   const teller = await person(page.request, source.collection, "Aunt", "Non-member storyteller");
   const memory = await story(page.request, source.path, teller, "The original account.");
   expect((await post(page.request, source.path + `/stories/${memory}/details`, { version: "1", text: "The edited account." })).status()).toBe(200);
-  expect((await post(page.request, source.path + "/details", { version: "1", name: "Bowl", description: "Shared details", currentKeeper: teller })).status()).toBe(200);
+  expect((await post(page.request, source.path + "/details", { version: "1", name: "Bowl", description: "Shared details", currentKeeper: teller, categoryName: "\u0085Kitchenware", locationName: "\uFEFFUpstairs cabinet\uFEFF" })).status()).toBe(200);
+  expect((await post(page.request, source.path + "/details", { version: "2", name: "Bowl", description: "Shared details", locationId: "" })).status()).toBe(200);
   await quiesce(page);
   const collectionId = source.collection.split("/").pop()!;
   const credited = Array.from({ length: 199 }, (_, i) => ({ id: randomUUID(), email: `archive-contributor-${i}@example.com` }));
@@ -438,6 +442,8 @@ test("a founder confirms a real archive and restores independent records, credit
   const id = await job(page.request, source.collection); await terminal(source.collection, id);
   const path = info.outputPath("restore-source.zip"); const original = await artifact(page.request, source.collection, id, path);
   expect(original.data.contributors).toHaveLength(200);
+  expect(original.data.categories[0].name).toBe("\u0085Kitchenware");
+  expect(original.data.locations[0].name).toBe("Upstairs cabinet");
   await page.goto("/archive-preflight");
   await page.getByRole("checkbox", { name: /Review for restoration/ }).check();
   await preflightInput(page).setInputFiles(path); await expect(preflightSubmit(page)).toBeEnabled(); await preflightSubmit(page).click();
@@ -458,9 +464,13 @@ test("a founder confirms a real archive and restores independent records, credit
   await page.goto(destination); await expect(page.getByRole("heading", { name: "Independent restoration", exact: true })).toBeVisible();
   const restoredId = await job(page.request, destination); await terminal(destination, restoredId);
   const restored = await artifact(page.request, destination, restoredId, info.outputPath("restored.zip"));
-  expect(restored.data.items[0]).toMatchObject({ name: "Bowl", description: "Shared details", version: 2, current_keeper_id: restored.data.people[0].id });
+  expect(restored.data.items[0]).toMatchObject({ name: "Bowl", description: "Shared details", version: 3, current_keeper_id: restored.data.stories[0].storyteller_id, category_id: restored.data.categories[0].id, location_id: null });
   expect(restored.data.items[0].id).not.toBe(source.id);
-  expect(restored.verified.version).toBe("1.1");
+  expect(restored.verified.version).toBe("1.2");
+  expect(restored.data.categories[0].name).toBe("\u0085Kitchenware");
+  expect(restored.data.categories[0].id).not.toBe(original.data.categories[0].id);
+  expect(restored.data.locations[0].name).toBe("Upstairs cabinet");
+  expect(restored.data.item_revisions.find((row: { version: number }) => row.version === 2)).toMatchObject({ category_id: restored.data.categories[0].id, location_id: restored.data.locations[0].id });
   const { contributors, snapshot } = restored.data;
   expect(contributors).toHaveLength(201);
   expect(snapshot.generated_by).toBe(source.account);
@@ -472,6 +482,67 @@ test("a founder confirms a real archive and restores independent records, credit
   expect(restored.data.stories[0].recorded_by).not.toBe(source.account);
   for (const key of ["retained_file", "thumbnail_file"]) expect(restored.data.photos[0][key]).toEqual(original.data.photos[0][key]);
   expect((await liveRows()).collections).toBe(2);
+});
+
+test("members reuse shared labels, reconcile competing edits and see labels in both PDFs", async ({ page, browser }, info) => {
+  const source = await family(page);
+  const other = await createCollection(page, "Other family");
+  const otherItem = await capture(page.request, other);
+  const change = (request: APIRequestContext, path: string, version: string, extra: Record<string, string>) => post(request, `${path}/details`, { version, name: "Bowl", description: "A family bowl", ...extra });
+  const choices = async (request: APIRequestContext, path: string) => (await request.get(`${path}/details?choices=1`)).json();
+  const otherPath = `${other}/items/${otherItem}`;
+  expect((await change(page.request, otherPath, "1", { categoryName: "Private other category" })).status()).toBe(200);
+  const foreign = (await choices(page.request, otherPath)).category[0].id;
+  const invitePath = await invite(page, source.collection, "label-member@example.com");
+  const context = await browser.newContext();
+  try {
+    const member = await context.newPage();
+    await signIn(member, "label-member@example.com"); await accept(member, invitePath, "Archive family");
+    await member.goto(source.path);
+    expect((await member.request.get(`${otherPath}/details?choices=1`)).status()).toBe(404);
+    const category = member.getByLabel("Category (optional)", { exact: true });
+    const save = member.getByRole("button", { name: "Save item details", exact: true });
+    await expect(save).toBeEnabled({ timeout: 30_000 });
+    expect((await change(member.request, source.path, "1", { categoryId: foreign, locationName: "Should not persist" })).status()).toBe(400);
+    expect(await choices(member.request, source.path)).toEqual({ category: [], location: [] });
+    await member.getByLabel("New category label").fill("Kitchenware");
+    await member.getByLabel("New location label").fill("Sideboard");
+    await member.getByLabel("Name", { exact: true }).fill("Bowl");
+    await member.getByLabel("Short description", { exact: true }).fill("A family bowl");
+    await save.click(); await member.waitForURL("**?saved=1");
+    await expect(category.locator("option:checked")).toHaveText("Kitchenware");
+    const shared = await choices(page.request, source.path);
+    expect(shared.category).toEqual([{ id: expect.any(String), name: "Kitchenware" }]);
+    expect((await change(page.request, source.path, "1", { categoryName: "Stale category" })).status()).toBe(409);
+    expect((await change(page.request, source.path, "2", { categoryName: " KITCHENWARE " })).status()).toBe(200);
+    expect(await choices(member.request, source.path)).toEqual(shared);
+    for (const format of ["inventory", "catalogue"]) {
+      const url = `${source.collection}/${format}/requests`, id = randomUUID();
+      expect((await post(member.request, url, { action: "create", id })).status()).toBe(202);
+      await expect.poll(async () => (await (await member.request.get(url)).json()).jobs.find((job: { id: string }) => job.id === id)?.status, { timeout: 60_000 }).toBe("ready");
+      const grant = await member.request.get(`${url}/${id}/download`, { maxRedirects: 0 });
+      expect(grant.status()).toBe(302);
+      const path = info.outputPath(`${format}.pdf`);
+      await writeFile(path, await (await member.request.get(grant.headers().location)).body());
+      const { stdout } = await run("pdftotext", [path, "-"]);
+      expect(stdout).toContain("Category: Kitchenware"); expect(stdout).toContain("Location: Sideboard");
+    }
+    await expect(save).toBeEnabled({ timeout: 30_000 });
+    await member.goto(source.path);
+    await expect(save).toBeEnabled({ timeout: 30_000 });
+    await category.selectOption(""); await save.click(); await member.waitForURL("**?saved=1");
+    await expect(category.locator("option:checked")).toHaveText("No category selected");
+    await member.goto(`${source.path}/history`);
+    await expect(member.getByRole("article", { name: "Item version 2" })).toContainText("Category: Kitchenware");
+    await expect(member.getByRole("article", { name: "Item version 3" })).toContainText("Category: Not recorded");
+    await page.goto(source.path);
+    const founderSave = page.getByRole("button", { name: "Save item details", exact: true });
+    await expect(founderSave).toBeEnabled({ timeout: 30_000 });
+    await page.getByLabel("Category (optional)", { exact: true }).selectOption({ label: "Kitchenware" });
+    await founderSave.click(); await page.waitForURL("**?saved=1");
+    await expect.poll(async () => (await (await member.request.get(`${source.path}/details`)).json()).current.version).toBe(4);
+    expect(await choices(member.request, source.path)).toEqual(shared);
+  } finally { await context.close(); }
 });
 
 test("restore confirmation rejects changed staged bytes and lost founder approval without publishing", async ({ page }, info) => {
