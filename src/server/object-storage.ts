@@ -2,6 +2,7 @@ import "server-only";
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createReadStream, createWriteStream } from "node:fs";
+import { createHash } from "node:crypto";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
@@ -36,16 +37,18 @@ export async function stageArchiveOnDisk(key: string, expectedBytes: number, pat
   if (!result.Body) throw new IncompleteArchiveUpload();
   if (!(result.Body instanceof Readable)) throw new Error("Unexpected archive storage stream.");
   const source = result.Body;
+  const hash = createHash("sha256");
   let bytes = 0;
   try {
     if (result.ContentLength !== expectedBytes) throw new IncompleteArchiveUpload();
     const cap = new Transform({ transform(chunk, _encoding, next) {
       bytes += chunk.length;
       if (bytes > expectedBytes) next(new IncompleteArchiveUpload());
-      else next(null, chunk);
+      else { hash.update(chunk); next(null, chunk); }
     } });
     await pipeline(source, cap, createWriteStream(path, { flags: "wx", mode: 0o600 }), { signal });
     if (bytes !== expectedBytes) throw new IncompleteArchiveUpload();
+    return hash.digest("hex");
   } finally { source.destroy(); }
 }
 
@@ -75,13 +78,15 @@ export async function readStagedPhoto(key: string, expectedBytes: number): Promi
   }
 }
 
-export async function putRetainedPhoto(key: string, bytes: Buffer) {
+export async function putRetainedPhoto(key: string, bytes: Buffer, signal?: AbortSignal) {
   const s3 = storage();
-  await s3.send(new PutObjectCommand({ Bucket: bucket(), Key: key, Body: bytes, ContentType: "image/jpeg", CacheControl: "private, no-store" }), { abortSignal: AbortSignal.timeout(10_000) });
+  const timeout = AbortSignal.timeout(10_000);
+  await s3.send(new PutObjectCommand({ Bucket: bucket(), Key: key, Body: bytes, ContentType: "image/jpeg", CacheControl: "private, no-store" }), { abortSignal: signal ? AbortSignal.any([timeout, signal]) : timeout });
 }
-export async function removePhotoObject(key: string) {
+export async function removePhotoObject(key: string, signal?: AbortSignal) {
   const s3 = storage();
-  await s3.send(new DeleteObjectCommand({ Bucket: bucket(), Key: key }), { abortSignal: AbortSignal.timeout(10_000) });
+  const timeout = AbortSignal.timeout(10_000);
+  await s3.send(new DeleteObjectCommand({ Bucket: bucket(), Key: key }), { abortSignal: signal ? AbortSignal.any([timeout, signal]) : timeout });
 }
 export async function authorizePhotoDownload(key: string) {
   const s3 = storage();

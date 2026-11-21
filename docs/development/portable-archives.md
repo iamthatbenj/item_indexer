@@ -102,7 +102,7 @@ seven-day download availability measured from the original request.
 ## Limits, costs and independent verification
 
 Pilot rejection boundaries: **200 items, 2000 people, 1000 stories, 500 active photos,
-10000 total domain rows including revisions/removal metadata, 200 contributors,
+10000 total domain rows including revisions/removal metadata, 200 contributors (plus a separate snapshot requester in format 1.1),
 8 MiB structured JSON, 240 MiB declared main-photo bytes, 256 MiB final ZIP**.
 These are not guaranteed throughput. Remote reads, upload time, concurrent
 invocations, memory and ephemeral-disk limits may stop an otherwise under-limit

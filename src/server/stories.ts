@@ -10,7 +10,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 
 async function readStories(accountId: string, collectionId: string, itemId: string, storyId: string | null = null) {
   const result = await database().execute({
-    sql: `SELECT s.id, s.text, s.version, s.recorded_at, s.updated_at, a.email AS recorder_email, e.email AS editor_email, p.id AS storyteller_id, p.name, p.note
+    sql: `SELECT s.id, s.text, s.version, s.recorded_at, s.updated_at, COALESCE(a.historical_email,a.email) AS recorder_email, COALESCE(e.historical_email,e.email) AS editor_email, p.id AS storyteller_id, p.name, p.note
           FROM stories s JOIN items i ON i.id=s.item_id
           JOIN memberships m ON m.collection_id=i.collection_id
           JOIN people p ON p.id=s.storyteller_id AND p.collection_id=i.collection_id

@@ -30,7 +30,7 @@ export async function capturePDFSnapshot(tx: Transaction, format: PDFFormat, col
       const id = String(photo.item_id); const group = photosByItem.get(id) ?? [];
       group.push({ key: String(photo.photo_key), bytes: Number(photo.photo_bytes), sha256: String(photo.sha256) }); photosByItem.set(id, group);
     }
-    const stories = (await tx.execute({ sql: `SELECT s.*,p.name AS storyteller_name,p.note AS storyteller_note,r.email AS recorder,e.email AS editor
+    const stories = (await tx.execute({ sql: `SELECT s.*,p.name AS storyteller_name,p.note AS storyteller_note,COALESCE(r.historical_email,r.email) AS recorder,COALESCE(e.historical_email,e.email) AS editor
       FROM stories s JOIN items i ON i.id=s.item_id LEFT JOIN people p ON p.id=s.storyteller_id AND p.collection_id=i.collection_id
       JOIN accounts r ON r.id=s.recorded_by JOIN accounts e ON e.id=s.last_edited_by
       WHERE i.collection_id=? ORDER BY i.created_at,i.id,s.recorded_at,s.id LIMIT 1001`, args: [collectionId] })).rows;

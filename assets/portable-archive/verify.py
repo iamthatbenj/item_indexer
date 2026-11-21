@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify format-1.0 archives offline, without extracting or executing ZIP members.
+"""Verify format-1.0 and format-1.1 archives offline, without extracting or executing ZIP members.
 Integrity is relative to the manifest, not a signature or proof of historical truth.
 Use a trusted copy of this program for archives of uncertain provenance.
 """
@@ -12,7 +12,7 @@ import sys
 import zipfile
 
 FORMAT = "family-belongings"
-VERSION = "1.0"
+VERSIONS = ("1.0", "1.1")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -46,7 +46,9 @@ def indexed(rows):
 
 def relationships(data, files):
     root = {"format", "version", "snapshot", "collection", "contributors", "items", "people", "stories", "photos", "item_revisions", "person_revisions", "story_revisions"}
-    require(set(data) == root and data["format"] == FORMAT and data["version"] == VERSION, "Unsupported data format/version/fields")
+    if data.get("version") == "1.1":
+        root.add("origins")
+    require(set(data) == root and data["format"] == FORMAT and data["version"] in VERSIONS, "Unsupported data format/version/fields")
     snapshot = data["snapshot"]
     require(set(snapshot) == {"id", "captured_at", "source_collection_id", "generated_by"}, "Invalid snapshot")
     require(set(data["collection"]) == {"id", "name", "created_at"} and data["collection"]["id"] == snapshot["source_collection_id"], "Invalid collection namespace")
@@ -65,12 +67,24 @@ def relationships(data, files):
         maps[group] = indexed(data[group])
         require(all(set(row) == set(names.split()) for row in data[group]), "Unsupported record fields")
     require(sum(len(data[key]) for key in fields if key != "contributors") <= 10000, "Too many records")
-    require(len(data["items"]) <= 200 and len(data["people"]) <= 2000 and len(data["stories"]) <= 1000 and len(data["contributors"]) <= 200, "Record limits exceeded")
+    require(len(data["items"]) <= 200 and len(data["people"]) <= 2000 and len(data["stories"]) <= 1000 and len(data["contributors"]) <= (201 if data["version"] == "1.1" else 200), "Record limits exceeded")
 
     def ref(value, group, nullable=False):
         require(nullable and value is None or isinstance(value, str) and value in maps[group], "Dangling record/credit reference")
 
     ref(snapshot["generated_by"], "contributors")
+    if data["version"] == "1.1":
+        maps["collection"] = indexed([data["collection"]])
+        origins = data["origins"]
+        require(isinstance(origins, list) and len(origins) <= 10202, "Invalid origin count")
+        seen = set()
+        for row in origins:
+            require(isinstance(row, dict) and set(row) == {"record_type", "record_id", "source_collection_id", "source_record_id"}, "Unsupported origin fields")
+            require(all(isinstance(v, str) and v and len(v.encode('utf-16-le')) <= 512 and not re.search(r'[\x00-\x1f]', v) for v in row.values()), "Invalid origin identity")
+            group, record = row["record_type"], row["record_id"]
+            require(group in maps and record in maps[group] and (group, record) not in seen, "Invalid origin reference")
+            seen.add((group, record))
+        require(("collection", data["collection"]["id"]) in seen, "Missing collection origin")
     versions = set()
     for p in data["people"]:
         versions.add((p["id"], p["version"]))
@@ -83,11 +97,14 @@ def relationships(data, files):
         ref(pid, "people")
         require(type(version) is int and (pid, version) in versions, "Missing historical person version")
 
+    credited = set()
     for group, rows in ((key, data[key]) for key in fields):
         for row in rows:
             for key in ("created_by", "last_edited_by", "recorded_by", "edited_by", "removed_by"):
                 if key in row:
                     ref(row[key], "contributors", key == "removed_by" or group == "items" and key == "last_edited_by")
+                    if row[key] is not None:
+                        credited.add(row[key])
             if "current_keeper_id" in row:
                 person(row["current_keeper_id"], row["current_keeper_version"], True)
             if "storyteller_id" in row:
@@ -109,6 +126,7 @@ def relationships(data, files):
         row = maps["stories"][rev["story_id"]]
         require(all(row[key] == rev[key] for key in ("storyteller_id", "storyteller_version", "recorded_by", "recorded_at")), "Immutable story attribution changed")
     referenced = set()
+    require(len(credited) <= 200 and (len(data["contributors"]) <= 200 or len(credited) == 200 and snapshot["generated_by"] not in credited), "Contributor limit exceeded")
     active_items = set()
     active_photos = 0
     for photo in data["photos"]:
@@ -145,7 +163,7 @@ def verify(path):
             require(not stat.S_ISLNK(info.external_attr >> 16) and not info.is_dir() and not info.flag_bits & 1 and info.compress_type in (0, 8), "Unsupported ZIP entry")
         require(archive.getinfo("manifest.json").file_size <= 512 * 1024, "Manifest too large")
         manifest = json_bytes(archive.read("manifest.json"))
-        require(set(manifest) == {"format", "version", "snapshot", "files"} and manifest["format"] == FORMAT and manifest["version"] == VERSION, "Unsupported manifest")
+        require(set(manifest) == {"format", "version", "snapshot", "files"} and manifest["format"] == FORMAT and manifest["version"] in VERSIONS, "Unsupported manifest")
         files = {}
         for entry in manifest["files"]:
             require(set(entry) == {"path", "bytes", "sha256"} and isinstance(entry["path"], str), "Invalid manifest entry")
@@ -164,9 +182,9 @@ def verify(path):
             require(digest.hexdigest() == entry["sha256"], "File checksum mismatch")
         require(files["data.json"]["bytes"] <= 8 * 1024 * 1024, "Structured data too large")
         data = json_bytes(archive.read("data.json"))
-        require(data["snapshot"] == manifest["snapshot"], "Snapshot mismatch")
+        require(data["snapshot"] == manifest["snapshot"] and data["version"] == manifest["version"], "Snapshot or version mismatch")
         relationships(data, files)
-        return {"valid": True, "version": VERSION, "items": len(data["items"]), "photos": len(data["photos"]), "stories": len(data["stories"]), "files": len(files)}
+        return {"valid": True, "version": data["version"], "items": len(data["items"]), "photos": len(data["photos"]), "stories": len(data["stories"]), "files": len(files)}
 
 
 if __name__ == "__main__":

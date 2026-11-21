@@ -15,12 +15,12 @@ const { signIn, createCollection, invite, accept } = familyJourney(db);
 const run = promisify(execFile);
 let storage: ReturnType<typeof testStorage>, observer: APIRequestContext;
 const observed = new Set<string>();
-const tables = ["archive_export_attempts", "archive_exports", "catalogue_export_attempts", "catalogue_exports", "inventory_export_attempts", "inventory_exports", "story_revisions", "stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"];
+const tables = ["archive_restore_attempts", "archive_restores", "archive_origins", "archive_export_attempts", "archive_exports", "catalogue_export_attempts", "catalogue_exports", "inventory_export_attempts", "inventory_exports", "story_revisions", "stories", "person_revisions", "item_revisions", "photo_uploads", "item_photos", "items", "people", "invitations", "memberships", "collections", "sessions", "email_challenges", "accounts", "approved_founders", "rate_limits"];
 test.setTimeout(180_000);
 test.beforeAll(() => { storage = testStorage(); });
 test.beforeEach(async ({ page, request }) => {
   observer = page.request; observed.clear();
-  await db.execute("DROP TRIGGER IF EXISTS archive_publication_fault");
+  await db.batch(["DROP TRIGGER IF EXISTS archive_publication_fault", "DROP TRIGGER IF EXISTS test_restore_publish_fault"], "write");
   await db.batch(tables.map(table => `DELETE FROM ${table}`), "write");
   await rm(outbox, { recursive: true, force: true });
   await request.get("/collections/prewarm/archive"); await request.get("/collections/prewarm/archive/requests");
@@ -38,7 +38,7 @@ test.afterEach(async ({ page }) => {
     return active;
   }, { timeout: 65_000 }).toBe(0);
   await db.execute("DROP TRIGGER IF EXISTS archive_publication_fault");
-  await db.batch(tables.slice(0, 6).map(table => `DELETE FROM ${table}`), "write");
+  await db.batch(tables.slice(0, 9).map(table => `DELETE FROM ${table}`), "write");
   const objects = (await storage.client.send(new ListObjectsV2Command({ Bucket: storage.bucket }))).Contents ?? [];
   for (let offset = 0; offset < objects.length; offset += 20) await Promise.all(objects.slice(offset, offset + 20).map(object => storage.client.send(new DeleteObjectCommand({ Bucket: storage.bucket, Key: object.Key! }))));
 });
@@ -270,7 +270,7 @@ test("the additive version-eleven upgrade preserves prior PDF derivatives and ro
   execFileSync("node", ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
   expect((await db.execute("SELECT * FROM items")).rows).toEqual(before);
   expect([(await db.execute("SELECT * FROM inventory_exports")).rows, (await db.execute("SELECT * FROM catalogue_exports")).rows]).toEqual(derivatives);
-  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(11);
+  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(12);
   expect((await db.execute("PRAGMA foreign_key_check")).rows).toHaveLength(0);
   const id = await job(page.request, item.collection); await terminal(item.collection, id);
 });
@@ -289,7 +289,7 @@ test("source-schema allowlists make future persistent fields require an explicit
   await family(page); await quiesce(page);
   const columns: Record<string, string> = {
     collections: "id name created_at",
-    accounts: "id email created_at",
+    accounts: "id email created_at historical_email",
     items: "id collection_id created_by created_at name description version last_edited_by updated_at status current_keeper_id current_keeper_version",
     people: "id collection_id name note version created_by created_at creation_hash last_edited_by updated_at",
     stories: "id item_id storyteller_id storyteller_version text version recorded_by recorded_at last_edited_by updated_at creation_hash",
@@ -420,6 +420,121 @@ test("preflight enforces approval, account ownership, size and private upload au
     expect((await post(page.request, preflightRoute, { action: "validate", accountId: item.account, ticket })).status()).toBe(403);
     expect(await liveRows()).toEqual(original);
   } finally { await recipient.close(); }
+});
+
+test("a founder confirms a real archive and restores independent records, credit and unchanged photos", async ({ page }, info) => {
+  const source = await family(page, "Independent restoration");
+  const teller = await person(page.request, source.collection, "Aunt", "Non-member storyteller");
+  const memory = await story(page.request, source.path, teller, "The original account.");
+  expect((await post(page.request, source.path + `/stories/${memory}/details`, { version: "1", text: "The edited account." })).status()).toBe(200);
+  expect((await post(page.request, source.path + "/details", { version: "1", name: "Bowl", description: "Shared details", currentKeeper: teller })).status()).toBe(200);
+  await quiesce(page);
+  const collectionId = source.collection.split("/").pop()!;
+  const credited = Array.from({ length: 199 }, (_, i) => ({ id: randomUUID(), email: `archive-contributor-${i}@example.com` }));
+  for (let i = 0; i < credited.length; i += 40) await db.batch(credited.slice(i, i + 40).flatMap(({ id, email }) => [
+    { sql: "INSERT INTO accounts(id,email,created_at) VALUES (?,?,?)", args: [id, email, Date.now()] },
+    { sql: "INSERT INTO people(id,collection_id,name,created_by,created_at,creation_hash,last_edited_by,updated_at) VALUES (?,?,?,?,?,?,?,?)", args: [randomUUID(), collectionId, email, id, Date.now(), randomUUID(), id, Date.now()] },
+  ]), "write");
+  const id = await job(page.request, source.collection); await terminal(source.collection, id);
+  const path = info.outputPath("restore-source.zip"); const original = await artifact(page.request, source.collection, id, path);
+  expect(original.data.contributors).toHaveLength(200);
+  await page.goto("/archive-preflight");
+  await page.getByRole("checkbox", { name: /Review for restoration/ }).check();
+  await preflightInput(page).setInputFiles(path); await expect(preflightSubmit(page)).toBeEnabled(); await preflightSubmit(page).click();
+  const confirm = page.getByRole("button", { name: "Confirm restore as current administrator" });
+  await expect(confirm).toBeEnabled({ timeout: 62_000 });
+  const confirmed = page.waitForRequest(request => request.method() === "POST" && request.url().endsWith(preflightRoute) && new URLSearchParams(request.postData() ?? "").get("action") === "restore");
+  await confirm.click();
+  const fields = Object.fromEntries(new URLSearchParams((await confirmed).postData()!));
+  const link = page.getByRole("link", { name: "Open the restored collection" });
+  await expect(link).toBeVisible({ timeout: 62_000 });
+  const destination = (await link.getAttribute("href"))!; expect(destination).not.toBe(source.collection);
+  const retry = await post(page.request, preflightRoute, fields); expect(retry.status()).toBe(200); expect((await retry.json()).collectionUrl).toBe(destination);
+  await quiesce(page);
+  const oldFiles = (await db.execute({ sql: "SELECT photo_key,thumbnail_key FROM item_photos WHERE item_id=?", args: [source.id] })).rows;
+  for (const photo of oldFiles) for (const key of [photo.photo_key, photo.thumbnail_key]) await storage.client.send(new DeleteObjectCommand({ Bucket: storage.bucket, Key: String(key) }));
+  await db.execute({ sql: "DELETE FROM memberships WHERE collection_id=?", args: [source.collection.split("/").pop()!] });
+  observed.delete(source.collection); observed.add(destination);
+  await page.goto(destination); await expect(page.getByRole("heading", { name: "Independent restoration", exact: true })).toBeVisible();
+  const restoredId = await job(page.request, destination); await terminal(destination, restoredId);
+  const restored = await artifact(page.request, destination, restoredId, info.outputPath("restored.zip"));
+  expect(restored.data.items[0]).toMatchObject({ name: "Bowl", description: "Shared details", version: 2, current_keeper_id: restored.data.people[0].id });
+  expect(restored.data.items[0].id).not.toBe(source.id);
+  expect(restored.verified.version).toBe("1.1");
+  const { contributors, snapshot } = restored.data;
+  expect(contributors).toHaveLength(201);
+  expect(snapshot.generated_by).toBe(source.account);
+  expect(contributors.filter((row: { id: string }) => row.id !== source.account).map((row: { email: string }) => row.email).sort()).toEqual([...credited.map(row => row.email), "founder@example.com"].sort());
+  expect(restored.data.origins).toContainEqual({ record_type: "items", record_id: restored.data.items[0].id, source_collection_id: source.collection.split("/").pop(), source_record_id: source.id });
+  expect(restored.data.stories[0]).toMatchObject({ text: "The edited account.", storyteller_id: restored.data.people[0].id, version: 2 });
+  expect(restored.data.story_revisions[0]).toMatchObject({ story_id: restored.data.stories[0].id, text: "The original account." });
+  expect(restored.data.contributors.find((row: { id: string }) => row.id === restored.data.stories[0].recorded_by)).toMatchObject({ email: "founder@example.com" });
+  expect(restored.data.stories[0].recorded_by).not.toBe(source.account);
+  for (const key of ["retained_file", "thumbnail_file"]) expect(restored.data.photos[0][key]).toEqual(original.data.photos[0][key]);
+  expect((await liveRows()).collections).toBe(2);
+});
+
+test("restore confirmation rejects changed staged bytes and lost founder approval without publishing", async ({ page }, info) => {
+  const source = await family(page);
+  const id = await job(page.request, source.collection); await terminal(source.collection, id);
+  const { bytes } = await artifact(page.request, source.collection, id, info.outputPath("reviewed.zip"));
+  const a = { accountId: source.account };
+  const prepare = await post(page.request, preflightRoute, { ...a, action: "prepare", size: String(bytes.length) }); expect(prepare.status()).toBe(200);
+  const { ticket, uploadUrl } = await prepare.json();
+  const upload = (data: Buffer) => page.request.put(uploadUrl, { data, headers: { "Content-Type": "application/octet-stream" } });
+  expect((await upload(bytes)).ok()).toBe(true);
+  const preview = await post(page.request, preflightRoute, { ...a, action: "review", ticket }); expect(preview.status()).toBe(200);
+  const { review } = await preview.json();
+  const before = await liveRows();
+  const changed = Buffer.from(bytes); changed[changed.length - 1] ^= 1;
+  expect((await upload(changed)).ok()).toBe(true);
+  const fields = { ...a, action: "restore", ticket, review };
+  const mismatch = await post(page.request, preflightRoute, fields); expect(mismatch.status()).toBe(409);
+  expect((await mismatch.json()).error).toContain("changed after review");
+  expect(await liveRows()).toEqual(before);
+  expect((await upload(bytes)).ok()).toBe(true);
+  await quiesce(page);
+  await db.execute("DELETE FROM approved_founders WHERE email='founder@example.com'");
+  expect((await post(page.request, preflightRoute, fields)).status()).toBe(403);
+  expect(await liveRows()).toEqual(before);
+  expect((await storage.client.send(new ListObjectsV2Command({ Bucket: storage.bucket, Prefix: "photos/archive-restore/" }))).Contents ?? []).toHaveLength(0);
+});
+
+test("a failed restore publication rolls back all records and the same review can be retried", async ({ page, browser }, info) => {
+  const source = await family(page);
+  const invitePath = await invite(page, source.collection, "old-relative@example.com");
+  const context = await browser.newContext();
+  try {
+    const oldMember = await context.newPage();
+    await signIn(oldMember, "old-relative@example.com"); await accept(oldMember, invitePath, "Archive family");
+    const teller = await person(oldMember.request, source.collection, "Grandparent");
+    await story(oldMember.request, source.path, teller, "Recorded in the old collection.");
+    const id = await job(page.request, source.collection); await terminal(source.collection, id);
+    const { bytes } = await artifact(page.request, source.collection, id, info.outputPath("retry.zip"));
+    const a = { accountId: source.account };
+    const prepare = await post(page.request, preflightRoute, { ...a, action: "prepare", size: String(bytes.length) }); expect(prepare.status()).toBe(200);
+    const { ticket, uploadUrl } = await prepare.json();
+    expect((await page.request.put(uploadUrl, { data: bytes, headers: { "Content-Type": "application/octet-stream" } })).ok()).toBe(true);
+    const preview = await post(page.request, preflightRoute, { ...a, action: "review", ticket }); expect(preview.status()).toBe(200);
+    const { review } = await preview.json();
+    const fields = { ...a, action: "restore", ticket, review };
+    await quiesce(page, oldMember);
+    const before = await liveRows();
+    await db.execute("CREATE TRIGGER test_restore_publish_fault BEFORE UPDATE OF collection_id ON archive_restores BEGIN SELECT RAISE(ABORT, 'injected restore publication failure'); END");
+    try {
+      expect((await post(page.request, preflightRoute, fields)).status()).toBe(503);
+      expect(await liveRows()).toEqual(before);
+      expect((await storage.client.send(new ListObjectsV2Command({ Bucket: storage.bucket, Prefix: "photos/archive-restore/" }))).Contents ?? []).toHaveLength(0);
+    } finally { await db.execute("DROP TRIGGER test_restore_publish_fault"); }
+    const response = await post(page.request, preflightRoute, fields); expect(response.status()).toBe(200);
+    const { collectionUrl } = await response.json();
+    expect((await oldMember.request.get(collectionUrl, { maxRedirects: 0 })).status()).not.toBe(200);
+    expect((await oldMember.request.get(endpoint(collectionUrl))).status()).toBe(404);
+    const saved = await job(page.request, collectionUrl); observed.add(collectionUrl); await terminal(collectionUrl, saved);
+    const copy = await artifact(page.request, collectionUrl, saved, info.outputPath("recovered.zip"));
+    expect(copy.data.contributors.find((row: { id: string }) => row.id === copy.data.stories[0].recorded_by)?.email).toBe("old-relative@example.com");
+    expect((await liveRows()).memberships).toBe(Number(before.memberships) + 1);
+  } finally { await context.close(); }
 });
 
 test("an interrupted preflight displays no result and allows deliberate retry", async ({ page }, info) => {

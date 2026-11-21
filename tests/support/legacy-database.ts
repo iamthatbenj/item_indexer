@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 export async function removeArchiveSchema(db: Client) {
   if (Number((await db.execute("SELECT COUNT(*) AS count FROM archive_exports")).rows[0].count) !== 0) throw new Error("Legacy fixture must have no archive requests.");
-  await db.batch(["DROP TABLE archive_export_attempts", "DROP TABLE archive_exports", "DELETE FROM schema_migrations WHERE name='0011_portable_archives.sql'"], "write");
+  await db.batch(["DROP TABLE archive_restore_attempts", "DROP TABLE archive_restores", "DROP TABLE archive_origins", "ALTER TABLE accounts DROP COLUMN historical_email", "DELETE FROM schema_migrations WHERE name='0012_archive_restoration.sql'", "DROP TABLE archive_export_attempts", "DROP TABLE archive_exports", "DELETE FROM schema_migrations WHERE name='0011_portable_archives.sql'"], "write");
 }
 
 export async function removeCatalogueSchema(db: Client) {

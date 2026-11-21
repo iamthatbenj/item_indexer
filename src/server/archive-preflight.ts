@@ -4,7 +4,7 @@ import { crc32 } from "node:zlib";
 import { openPromise, type Entry, type ZipFile } from "yauzl";
 import { visit } from "jsonc-parser";
 import sharp from "sharp";
-import { ARCHIVE_VERSION, validateArchiveRelationships, type ArchiveData } from "./archive-snapshot";
+import { ARCHIVE_VERSION, ARCHIVE_ORIGINS_VERSION, MAX_CREDITED_CONTRIBUTORS, MAX_ARCHIVE_ORIGINS, originGroups, validateArchiveRelationships, type ArchiveData } from "./archive-snapshot";
 import type { ArchivePreview } from "@/archive-preview";
 
 const MiB = 1024 * 1024;
@@ -61,7 +61,8 @@ function snapshot(input: unknown) {
 }
 function version(input: unknown) {
   const o = input as Fields | null;
-  check(o?.format === FORMAT && o.version === ARCHIVE_VERSION, "Unsupported archive format or version. Choose a Family Belongings format 1.0 archive.");
+  check(o?.format === FORMAT && (o.version === ARCHIVE_VERSION || o.version === ARCHIVE_ORIGINS_VERSION), "Unsupported archive format or version. Choose a Family Belongings format 1.0 or 1.1 archive.");
+  return o.version;
 }
 function fields(name: string, row: Fields) {
   for (const [key, v] of Object.entries(row)) {
@@ -81,9 +82,16 @@ function fields(name: string, row: Fields) {
   }
 }
 
-function graph(input: unknown, expectedSnapshot: Fields, files: Map<string, Fields>) {
-  version(input);
-  const data = exact(input, `format version snapshot collection ${Object.keys(schema).join(" ")}`);
+function graph(input: unknown, expectedSnapshot: Fields, files: Map<string, Fields>, archiveVersion: string) {
+  check(version(input) === archiveVersion, "Archive format versions disagree.");
+  const data = exact(input, `format version snapshot collection ${Object.keys(schema).join(" ")}${archiveVersion === ARCHIVE_ORIGINS_VERSION ? " origins" : ""}`);
+  if (archiveVersion === ARCHIVE_ORIGINS_VERSION) {
+    check(Array.isArray(data.origins) && data.origins.length <= MAX_ARCHIVE_ORIGINS, "Archive origin limits exceeded.");
+    for (const value of data.origins) {
+      const row = exact(value, "record_type record_id source_collection_id source_record_id");
+      check(originGroups.some(group => group === row.record_type) && id(row.record_id) && id(row.source_collection_id) && id(row.source_record_id));
+    }
+  }
   const stored = snapshot(data.snapshot);
   check(Object.keys(stored).every(key => stored[key] === expectedSnapshot[key]), "Archive snapshot metadata disagrees.");
   const collection = exact(data.collection, "id name created_at");
@@ -93,7 +101,7 @@ function graph(input: unknown, expectedSnapshot: Fields, files: Map<string, Fiel
     const rows = data[group];
     check(Array.isArray(rows));
     if (group !== "contributors") records += rows.length;
-    check(records <= 10000 && rows.length <= ({ contributors: 200, items: 200, people: 2000, stories: 1000 }[group] ?? 10000), "Archive record limits exceeded.");
+    check(records <= 10000 && rows.length <= ({ contributors: MAX_CREDITED_CONTRIBUTORS + (data.version === ARCHIVE_ORIGINS_VERSION ? 1 : 0), items: 200, people: 2000, stories: 1000 }[group] ?? 10000), "Archive record limits exceeded.");
     for (const row of rows) fields(group, exact(row, keys));
   }
   // Exact shape and scalar types have been checked before sharing the export graph rules.
@@ -117,8 +125,8 @@ function graph(input: unknown, expectedSnapshot: Fields, files: Map<string, Fiel
   }
   check(active <= 500 && mainBytes <= 240 * MiB, "Archive photo limits exceeded.");
   check(files.size === images.size + 3 && ["data.json", "FORMAT.md", "verify.py"].every(name => files.has(name)), "The archive contains missing or unrelated files.");
-  const preview: ArchivePreview = { version: ARCHIVE_VERSION, collection: String(collection.name), items: typed.items.length, people: typed.people.length, stories: typed.stories.length, photos: active, removedPhotos: typed.photos.length - active, revisions: typed.item_revisions.length + typed.person_revisions.length + typed.story_revisions.length, files: images.size };
-  return { images, preview };
+  const preview: ArchivePreview = { version: archiveVersion, collection: String(collection.name), items: typed.items.length, people: typed.people.length, stories: typed.stories.length, photos: active, removedPhotos: typed.photos.length - active, revisions: typed.item_revisions.length + typed.person_revisions.length + typed.story_revisions.length, files: images.size };
+  return { data: typed, images, preview };
 }
 
 async function member(zip: ZipFile, entry: Entry, signal: AbortSignal, hash?: unknown) {
@@ -145,8 +153,21 @@ async function member(zip: ZipFile, entry: Entry, signal: AbortSignal, hash?: un
   } finally { signal.removeEventListener("abort", stop); stream.destroy(); }
 }
 
-export async function validateStagedArchive(path: string, signal: AbortSignal): Promise<ArchivePreview> {
+export function validateStagedArchive(path: string, signal: AbortSignal): Promise<ArchivePreview> {
+  return withVerifiedArchive(path, signal, async ({ preview }) => preview);
+}
+
+type VerifiedArchive = {
+  data: ArchiveData;
+  preview: ArchivePreview;
+  readAttachment(path: string): Promise<Buffer>;
+};
+
+// The caller owns a private, immutable local copy. Expose attachments only after
+// the entire archive passes validation, and keep consumption within the ZIP lifetime.
+export async function withVerifiedArchive<T>(path: string, signal: AbortSignal, consume: (archive: VerifiedArchive) => Promise<T>): Promise<T> {
   let zip: ZipFile | undefined;
+  let consuming = false;
   try {
     zip = await openPromise(path, { lazyEntries: true, autoClose: false, strictFileNames: true, validateEntrySizes: true });
     check(zip.entryCount >= 4 && zip.entryCount <= 1004, "Archive file count is outside supported limits.");
@@ -170,7 +191,7 @@ export async function validateStagedArchive(path: string, signal: AbortSignal): 
     check(ranges.every((range, i) => range.end <= (ranges[i + 1]?.start ?? zip!.fileSize)), "Archive entry data overlaps or is incomplete.");
     const m = entries.get("manifest.json");
     check(m, "Required archive manifest is missing.");
-    const value = json(await member(zip, m, signal)); version(value);
+    const value = json(await member(zip, m, signal)); const archiveVersion = version(value);
     const manifest = exact(value, "format version snapshot files");
     const source = snapshot(manifest.snapshot);
     check(Array.isArray(manifest.files) && manifest.files.length === entries.size - 1, "The archive has missing or extra files.");
@@ -181,7 +202,7 @@ export async function validateStagedArchive(path: string, signal: AbortSignal): 
       files.set(name, row);
     }
     const d = entries.get("data.json"); check(d && files.has("data.json"));
-    const { preview, images } = graph(json(await member(zip, d, signal, files.get("data.json")!.sha256)), source, files);
+    const { data, preview, images } = graph(json(await member(zip, d, signal, files.get("data.json")!.sha256)), source, files, archiveVersion);
     for (const [name, file] of files) {
       if (name === "data.json") continue;
       const bytes = await member(zip, entries.get(name)!, signal, file.sha256);
@@ -197,8 +218,19 @@ export async function validateStagedArchive(path: string, signal: AbortSignal): 
       } catch { signal.throwIfAborted(); throw new RejectedArchive("An attached photo is not a complete, supported JPEG or its dimensions are incorrect."); }
     }
     signal.throwIfAborted();
-    return preview;
+    consuming = true;
+    let reading = false;
+    let closed = false;
+    try {
+      return await consume({ data, preview, async readAttachment(name) {
+        if (closed || reading || !images.has(name)) throw new Error("Invalid verified attachment read.");
+        reading = true;
+        try { return await member(zip!, entries.get(name)!, signal, files.get(name)!.sha256); }
+        finally { reading = false; }
+      } });
+    } finally { closed = true; }
   } catch (error) {
+    if (consuming) throw error;
     signal.throwIfAborted();
     if (error instanceof RejectedArchive) throw error;
     const code = (error as NodeJS.ErrnoException)?.code;

@@ -58,7 +58,9 @@ export async function redeemCode(email: string, code: string, trusted: boolean):
     if (!timingSafeEqual(expected, actual)) return null;
     await tx.execute({ sql: "DELETE FROM email_challenges WHERE id = ?", args: [challenge.id] });
     await tx.execute({ sql: "INSERT INTO accounts (id, email, created_at) VALUES (?, ?, ?) ON CONFLICT(email) DO NOTHING", args: [randomUUID(), email, now] });
-    const account = (await tx.execute({ sql: "SELECT id FROM accounts WHERE email = ?", args: [email] })).rows[0];
+    const account = (await tx.execute({ sql: "SELECT id FROM accounts WHERE email = ? AND historical_email IS NULL AND historical_email IS NULL", args: [email] })).rows[0];
+    if (!account) return null;
+    if (!account) return null;
     const token = randomBytes(32).toString("base64url");
     const expiresAt = now + (trusted ? 30 * 24 : 12) * 60 * MINUTE;
     await tx.execute({ sql: "DELETE FROM sessions WHERE expires_at <= ?", args: [now] });
@@ -67,13 +69,13 @@ export async function redeemCode(email: string, code: string, trusted: boolean):
   });
 }
 
-export async function currentAccount(): Promise<{ id: string; email: string; founder: boolean } | null> {
+export async function currentAccount(executor?: Pick<ReturnType<typeof database>, "execute">): Promise<{ id: string; email: string; founder: boolean } | null> {
   const token = (await cookies()).get(sessionCookie())?.value;
   if (!token || !/^[\w-]{43}$/.test(token)) return null;
-  const result = await database().execute({
+  const result = await (executor ?? database()).execute({
     sql: `SELECT a.id, a.email, f.email IS NOT NULL AS founder FROM sessions s
           JOIN accounts a ON a.id=s.account_id LEFT JOIN approved_founders f ON f.email=a.email
-          WHERE s.token_digest=? AND s.expires_at>?`,
+          WHERE s.token_digest=? AND s.expires_at>? AND a.historical_email IS NULL AND a.historical_email IS NULL`,
     args: [sessionDigest(token), Date.now()],
   });
   const row = result.rows[0];

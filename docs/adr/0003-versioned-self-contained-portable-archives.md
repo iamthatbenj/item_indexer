@@ -6,7 +6,7 @@ containing UTF-8 JSON, unchanged retained optimized photos and thumbnails, a hum
 format specification, and an offline standard-library verifier. This follows the
 retained-photo and private-R2 decisions; it does not promise camera originals.
 
-The authoritative format-1.0 specification is `assets/portable-archive/FORMAT.md`,
+The authoritative format-1.0 and format-1.1 specification is `assets/portable-archive/FORMAT.md`,
 also included in every archive. Required files have byte counts and SHA-256 entries
 in a closed manifest. Hashes establish internal consistency, not signatures,
 verified recollections or authority. Missing/corrupt required files and unresolved
@@ -24,10 +24,11 @@ presentations/jobs are not retained source attachments.
 
 Provenance is namespaced by source collection AND record type AND record ID; an
 item and its first photo can share an ID. Preserve parent references, version
-numbers, revision IDs and snapshot identity. Future independent copies must assign
-destination identities and remap relationships locally while retaining origin
-labels. Old identities are evidence, not permissions or a cross-collection read
-dependency. This does not implement restoration, merging or transfers.
+numbers, revision IDs and snapshot identity in each export. Restoration assigns
+fresh identities, remaps relationships locally, and keeps origin labels in
+format 1.1 re-exports. Old identities are evidence, not permissions or a
+cross-collection read dependency. Restoration does not merge or transfer records
+into existing collections.
 
 Require current membership for generation and each new download grant, including
 checks after storage I/O. Reuse short-lived private delivery and fenced, bounded,

@@ -15,7 +15,7 @@ export async function itemHistory(accountId: string, collectionId: string, itemI
       UNION ALL
       SELECT i.id, i.version, i.name, i.description, i.status, i.current_keeper_id, i.current_keeper_version,
         COALESCE(i.last_edited_by,i.created_by), COALESCE(i.updated_at,i.created_at) FROM accessible i
-    ) SELECT v.*, a.email AS editor_email,
+    ) SELECT v.*, COALESCE(a.historical_email,a.email) AS editor_email,
       CASE WHEN p.version=v.current_keeper_version THEN p.name ELSE pr.name END AS keeper_name,
       CASE WHEN p.version=v.current_keeper_version THEN p.note ELSE pr.note END AS keeper_note
       FROM versions v JOIN accounts a ON a.id=v.edited_by
@@ -43,7 +43,7 @@ export async function storyHistory(accountId: string, collectionId: string, item
       FROM story_revisions r JOIN accessible s ON s.id=r.story_id
       UNION ALL
       SELECT s.id, s.version, s.text, s.storyteller_id, s.storyteller_version, s.recorded_by, s.recorded_at, s.last_edited_by, s.updated_at FROM accessible s
-    ) SELECT v.*, a.email AS editor_email, recorder.email AS recorder_email,
+    ) SELECT v.*, COALESCE(a.historical_email,a.email) AS editor_email, COALESCE(recorder.historical_email,recorder.email) AS recorder_email,
       CASE WHEN p.version=v.storyteller_version THEN p.name ELSE pr.name END AS storyteller_name,
       CASE WHEN p.version=v.storyteller_version THEN p.note ELSE pr.note END AS storyteller_note
       FROM versions v JOIN accounts a ON a.id=v.edited_by JOIN accounts recorder ON recorder.id=v.recorded_by

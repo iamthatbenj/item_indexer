@@ -304,7 +304,7 @@ test("migrations can be rerun without losing existing collections", async ({ pag
   execFileSync(process.execPath, ["--import", "tsx", "scripts/database.ts", "migrate"], { env: operatorEnv });
   await page.reload();
   await expect(page.getByRole("heading", { name: "Preserved through migration" })).toBeVisible();
-  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(11);
+  expect((await db.execute("SELECT * FROM schema_migrations")).rows).toHaveLength(12);
 });
 
 test("mobile sign-in and collection creation remain usable without horizontal overflow", async ({ page }) => {

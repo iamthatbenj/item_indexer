@@ -1,4 +1,4 @@
-# Family Belongings portable archive — format 1.0
+# Family Belongings portable archive — formats 1.0 and 1.1
 
 This ZIP is a private, self-contained snapshot, not an invitation, login backup,
 permission grant, valuation, or verified historical account. Keep copies private.
@@ -9,7 +9,7 @@ of camera originals. Hidden camera metadata was stripped during initial retentio
 
 ## Contents and integrity
 
-- `manifest.json`: `format` = `family-belongings`, `version` = `1.0`, `snapshot`
+- `manifest.json`: `format` = `family-belongings`, `version` = `1.0` or `1.1`, `snapshot`
   equal to data.json's snapshot, and `files`, a complete list of every other ZIP
   member. Each entry has a relative `path`, exact uncompressed `bytes`, and
   lowercase hexadecimal SHA-256 `sha256` of those exact bytes.
@@ -40,6 +40,8 @@ other versions safely. JSON objects must have unique keys; all ZIP names must be
 unique relative POSIX file paths (no absolute paths, backslashes or `..` segments).
 
 ## Structured data
+
+Format 1.1 adds exactly one field to `data.json`: `origins`, an array of up to 10,202 entries with `record_type`, `record_id`, `source_collection_id`, and `source_record_id`. Each entry refers to a record in this archive, keyed uniquely by record type and local record ID. `record_type` is `collection` or the corresponding record array name. An origin entry for the collection is required. Local records without an origin were not imported into this collection; their origin namespace is this archive’s own collection. Origin labels are claimed provenance, never access grants or live links. A subsequent restore gives records new local IDs and retains the origin labels rather than replacing them. The manifest and data versions must match; use the verifier bundled with the archive.
 
 `data.json` has `format`, `version`, `snapshot`, `collection`, `contributors`,
 `items`, `people`, `stories`, `photos`, `item_revisions`, `person_revisions` and
@@ -119,7 +121,7 @@ domain fields are not implemented in this version and must not be silently added
 or dropped without extending this contract.
 
 Pilot generation limits: 200 items, 2000 people, 1000 stories, 500 active photos,
-10000 total domain rows including revisions/removal metadata, 200 contributors,
+10000 total domain rows including revisions/removal metadata, 200 contributors (format 1.1 allows a separate snapshot requester in addition to 200 record-credited contributors),
 8 MiB structured JSON, 240 MiB declared active main-photo bytes and 256 MiB final
 ZIP. These are rejection boundaries, not guaranteed throughput. All or nothing:
 limits, missing files, checksum mismatch and interrupted generation fail rather

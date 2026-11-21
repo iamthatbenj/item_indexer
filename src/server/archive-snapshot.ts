@@ -3,6 +3,9 @@ import type { Transaction } from "@libsql/client";
 
 export class ArchiveError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
 export const ARCHIVE_VERSION = "1.0";
+export const ARCHIVE_ORIGINS_VERSION = "1.1";
+export const originGroups = ["collection", "contributors", "items", "people", "stories", "photos", "item_revisions", "person_revisions", "story_revisions"] as const;
+export type ArchiveOrigin = { record_type: typeof originGroups[number]; record_id: string; source_collection_id: string; source_record_id: string };
 export const ARCHIVE_LIMIT = 256 * 1024 * 1024;
 export type ArchiveRow = Record<string, string | number | null>;
 export type ArchiveFile = { path: string; bytes: number; sha256: string };
@@ -13,9 +16,13 @@ export type ArchiveData = {
   collection: ArchiveRow; contributors: ArchiveRow[]; items: ArchiveRow[]; item_revisions: ArchiveRow[];
   people: ArchiveRow[]; person_revisions: ArchiveRow[]; stories: ArchiveRow[]; story_revisions: ArchiveRow[];
   photos: ArchivePhoto[];
+  origins?: ArchiveOrigin[];
 };
 export type ArchiveSnapshot = { data: ArchiveData; files: { path: string; key: string; maximum: number; bytes: number | null; sha256: string | null }[] };
 const invalid = () => new ArchiveError("Saved relationships or history are incomplete. Contact the operator before exporting; no partial archive was created.", 409);
+export const MAX_CREDITED_CONTRIBUTORS = 200;
+export const MAX_ARCHIVE_ORIGINS = 10000 + MAX_CREDITED_CONTRIBUTORS + 2; // domain records, credits, requester, collection
+const contributorFields = ["created_by", "last_edited_by", "recorded_by", "edited_by", "removed_by"] as const;
 const limit = () => new ArchiveError("This collection exceeds the pilot archive limits (200 items, 2000 people, 1000 stories, 500 active photos, 10000 total records, 8 MiB structured data and 256 MiB ZIP). Contact the operator; nothing was silently omitted.", 422);
 
 // Explicit columns are the export boundary: never serialize accounts.*, tokens,
@@ -39,12 +46,16 @@ export async function captureArchiveSnapshot(tx: Transaction, collectionId: stri
   const photoRows = await rows("SELECT p.id,p.item_id,p.photo_key,p.thumbnail_key,p.width,p.height,p.photo_bytes,p.sha256,p.created_at,p.created_by,p.removed_at,p.removed_by FROM item_photos p JOIN items i ON i.id=p.item_id WHERE i.collection_id=? ORDER BY p.created_at,p.id LIMIT 10001");
   const groups = [items, people, stories, itemRevisions, personRevisions, storyRevisions, photoRows];
   if (items.length > 200 || people.length > 2000 || stories.length > 1000 || photoRows.filter(p => p.removed_at === null).length > 500 || groups.reduce((n, group) => n + group.length, 0) > 10000) throw limit();
-  const contributorIds = new Set([accountId]);
+  const origins = (await tx.execute({ sql: "SELECT record_type,record_id,source_collection_id,source_record_id FROM archive_origins WHERE collection_id=? ORDER BY record_type,record_id LIMIT ?", args: [collectionId, MAX_ARCHIVE_ORIGINS + 1] })).rows;
+  if (origins.length > MAX_ARCHIVE_ORIGINS) throw limit();
+  const contributorIds = new Set<string>();
   for (const group of groups) for (const row of group) for (const field of ["created_by", "last_edited_by", "recorded_by", "edited_by", "removed_by"]) {
     if (row[field] !== undefined && row[field] !== null) contributorIds.add(String(row[field]));
   }
-  if (contributorIds.size > 200) throw limit();
-  const contributors = (await tx.execute({ sql: `SELECT id,email FROM accounts WHERE id IN (${[...contributorIds].map(() => "?").join(",")}) ORDER BY id`, args: [...contributorIds] })).rows.map(row => ({ id: String(row.id), email: String(row.email) }));
+  if (contributorIds.size > MAX_CREDITED_CONTRIBUTORS) throw limit();
+  contributorIds.add(accountId);
+  if (!origins.length && contributorIds.size > MAX_CREDITED_CONTRIBUTORS) throw limit();
+  const contributors = (await tx.execute({ sql: `SELECT id,COALESCE(historical_email,email) AS email FROM accounts WHERE id IN (${[...contributorIds].map(() => "?").join(",")}) ORDER BY id`, args: [...contributorIds] })).rows.map(row => ({ id: String(row.id), email: String(row.email) }));
   if (contributors.length !== contributorIds.size) throw invalid();
   const files: ArchiveSnapshot["files"] = [];
   const photos = photoRows.map((row, index) => {
@@ -61,6 +72,10 @@ export async function captureArchiveSnapshot(tx: Transaction, collectionId: stri
   });
   if (files.reduce((n, file) => n + (file.bytes ?? 0), 0) > 240 * 1024 * 1024) throw limit();
   const data: ArchiveData = { format: "family-belongings", version: ARCHIVE_VERSION, snapshot: { id, captured_at: capturedAt, source_collection_id: collectionId, generated_by: accountId }, collection: collection as ArchiveRow, contributors, items, item_revisions: itemRevisions, people, person_revisions: personRevisions, stories, story_revisions: storyRevisions, photos };
+  if (origins.length) {
+    data.version = ARCHIVE_ORIGINS_VERSION;
+    data.origins = origins.filter(row => row.record_type !== "contributors" || contributorIds.has(String(row.record_id))).map(row => ({ record_type: String(row.record_type) as ArchiveOrigin["record_type"], record_id: String(row.record_id), source_collection_id: String(row.source_collection_id), source_record_id: String(row.source_record_id) }));
+  }
   validateArchiveRelationships(data);
   if (Buffer.byteLength(JSON.stringify(data)) > 8 * 1024 * 1024) throw limit();
   return { data, files };
@@ -100,10 +115,32 @@ export function validateArchiveRelationships(data: ArchiveData) {
       if (!Number.isSafeInteger(row.version) || Number(row.version) < 1 || versions.length !== Number(row.version) - 1 || versions.some((v, i) => v !== i + 1)) throw invalid();
     }
   }
-  index(data.photos);
+  const photos = index(data.photos);
+  if (data.version === ARCHIVE_ORIGINS_VERSION) {
+    if (!data.origins || data.origins.length > MAX_ARCHIVE_ORIGINS) throw invalid();
+    const all = { collection: index([data.collection]), items, people, stories, contributors, photos, item_revisions: index(data.item_revisions), story_revisions: index(data.story_revisions), person_revisions: index(data.person_revisions) };
+    const seen = new Set<string>();
+    for (const origin of data.origins) {
+      if (!originGroups.includes(origin.record_type) || !origin.source_collection_id || !origin.source_record_id) throw invalid();
+      ref(origin.record_id, all[origin.record_type]);
+      const key = JSON.stringify([origin.record_type, origin.record_id]);
+      if (seen.has(key)) throw invalid();
+      seen.add(key);
+    }
+    if (!seen.has(JSON.stringify(["collection", data.collection.id]))) throw invalid();
+  }
   ref(data.snapshot.generated_by, contributors);
-  for (const rows of [data.items, data.people, data.stories, data.photos, data.item_revisions, data.person_revisions, data.story_revisions]) for (const row of rows) for (const field of ["created_by", "last_edited_by", "recorded_by", "edited_by", "removed_by"]) {
-    if (row[field] !== undefined) ref(row[field], contributors, field === "last_edited_by" && "name" in row && "description" in row || field === "removed_by");
+  const credited = new Set<string>();
+  for (const rows of [data.items, data.people, data.stories, data.photos, data.item_revisions, data.person_revisions, data.story_revisions]) for (const row of rows) for (const field of contributorFields) {
+    const value = row[field];
+    if (value === undefined) continue;
+    ref(value, contributors, field === "last_edited_by" && "name" in row && "description" in row || field === "removed_by");
+    if (typeof value === "string") credited.add(value);
+  }
+  if (credited.size > MAX_CREDITED_CONTRIBUTORS) throw invalid();
+  if (contributors.size > MAX_CREDITED_CONTRIBUTORS) {
+    // The only extra entry in 1.1 may be the requester, not another record credit.
+    if (data.version !== ARCHIVE_ORIGINS_VERSION || credited.has(data.snapshot.generated_by) || contributors.size !== credited.size + 1) throw invalid();
   }
   for (const revision of data.story_revisions) {
     const current = stories.get(revision.story_id)!;
